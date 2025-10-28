@@ -3,6 +3,7 @@ import { ActivityIndicator, Button, Chip, Text, useTheme } from 'react-native-pa
 import { FlatList, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useInfiniteQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query';
 
 import { ThemedView } from '../../components/Themed';
 import { AlertCard } from '../../components/AlertCard';
@@ -23,11 +24,80 @@ const FILTER_LABELS: Record<FilterOption, string> = {
   low: 'Low',
 };
 
+const MAX_ALERT_CACHE = PAGE_SIZE * 5;
+
+type AlertsPageResult = {
+  alerts: FraudAlert[];
+  nextCursor: number | null;
+};
+
+async function fetchAlertsPage(userId: string, offset: number): Promise<AlertsPageResult> {
+  const start = Math.max(0, offset);
+  const end = start + PAGE_SIZE - 1;
+  const { data, error } = await supabase
+    .from('fraud_alerts')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .range(start, end);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const alerts = (data ?? []) as FraudAlert[];
+  const nextCursor = alerts.length === PAGE_SIZE ? end + 1 : null;
+
+  return {
+    alerts,
+    nextCursor,
+  };
+}
+
+function mergeAlertIntoCache(
+  existing: InfiniteData<AlertsPageResult, number> | undefined,
+  alert: FraudAlert,
+): InfiniteData<AlertsPageResult, number> {
+  const all = existing?.pages.flatMap((page) => page.alerts) ?? [];
+  const mergedMap = new Map<string, FraudAlert>();
+
+  all.forEach((item) => {
+    mergedMap.set(item.id, item);
+  });
+  mergedMap.set(alert.id, alert);
+
+  const merged = Array.from(mergedMap.values()).sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+  );
+  const limited = merged.slice(0, MAX_ALERT_CACHE);
+
+  const pages: AlertsPageResult[] = [];
+  const pageParams: number[] = [];
+
+  for (let offsetIndex = 0; offsetIndex < limited.length; offsetIndex += PAGE_SIZE) {
+    const slice = limited.slice(offsetIndex, offsetIndex + PAGE_SIZE);
+    const nextCursor = slice.length === PAGE_SIZE ? offsetIndex + PAGE_SIZE : null;
+    pages.push({ alerts: slice, nextCursor });
+    pageParams.push(offsetIndex);
+  }
+
+  if (pages.length === 0) {
+    pages.push({ alerts: [], nextCursor: null });
+    pageParams.push(0);
+  }
+
+  return {
+    pages,
+    pageParams,
+  };
+}
+
 export default function AlertsScreen() {
   const theme = useTheme();
   const { session } = useAuth();
   const userId = session?.user?.id ?? null;
   const router = useRouter();
+  const queryClient = useQueryClient();
   const localSearchParams = useLocalSearchParams<{ alertId?: string | string[] }>();
   const alertIdParam = React.useMemo(() => {
     const raw = localSearchParams.alertId;
@@ -40,14 +110,9 @@ export default function AlertsScreen() {
     return raw;
   }, [localSearchParams.alertId]);
 
-  const { alerts, replaceAlerts, appendAlerts, upsertAlert, markAlertRead } = useAlertStore();
+  const { alerts, replaceAlerts, upsertAlert, markAlertRead } = useAlertStore();
 
   const [filter, setFilter] = React.useState<FilterOption>('all');
-  const [initializing, setInitializing] = React.useState(true);
-  const [refreshing, setRefreshing] = React.useState(false);
-  const [fetchingMore, setFetchingMore] = React.useState(false);
-  const [hasMore, setHasMore] = React.useState(true);
-  const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
   const [selectedAlert, setSelectedAlert] = React.useState<AlertWithRead | null>(null);
 
   const filteredAlerts = React.useMemo(() => {
@@ -57,33 +122,54 @@ export default function AlertsScreen() {
     return alerts.filter((alert) => alert.severity === filter);
   }, [alerts, filter]);
 
-  const fetchRange = React.useCallback(
-    async (start: number, end: number) => {
-      if (!userId) {
-        return [] as FraudAlert[];
-      }
-
-      const { data, error } = await supabase
-        .from('fraud_alerts')
-        .select('*')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false })
-        .range(start, end);
-
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      return (data ?? []) as FraudAlert[];
-    },
-    [userId],
-  );
-
   React.useEffect(() => {
     setSelectedAlert(null);
-    setHasMore(true);
-    setErrorMessage(null);
   }, [userId]);
+
+  const {
+    data,
+    error,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isPending,
+    isRefetching,
+    refetch,
+  } = useInfiniteQuery({
+    queryKey: ['fraudAlerts', userId],
+    enabled: Boolean(userId),
+    initialPageParam: 0,
+    queryFn: ({ pageParam }) => {
+      if (!userId) {
+        return Promise.resolve({ alerts: [], nextCursor: null });
+      }
+      return fetchAlertsPage(userId, pageParam as number);
+    },
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+  });
+
+  const alertsFromQuery = React.useMemo(() => {
+    if (!data?.pages) {
+      return [] as FraudAlert[];
+    }
+    return data.pages.flatMap((page) => page.alerts);
+  }, [data]);
+
+  const initializing = isPending && alertsFromQuery.length === 0;
+  const refreshing = isRefetching;
+  const fetchingMore = isFetchingNextPage;
+  const errorMessage = error instanceof Error ? error.message : null;
+
+  React.useEffect(() => {
+    if (!userId) {
+      replaceAlerts([]);
+      return;
+    }
+    if (!data) {
+      return;
+    }
+    replaceAlerts(alertsFromQuery);
+  }, [alertsFromQuery, data, replaceAlerts, userId]);
 
   React.useEffect(() => {
     if (!alertIdParam) {
@@ -135,8 +221,13 @@ export default function AlertsScreen() {
         }
 
         if (data) {
-          upsertAlert(data as FraudAlert);
-          setSelectedAlert({ ...(data as FraudAlert), read: false });
+          const record = data as FraudAlert;
+          upsertAlert(record);
+          queryClient.setQueryData<InfiniteData<AlertsPageResult, number>>(
+            ['fraudAlerts', userId],
+            (existing) => mergeAlertIntoCache(existing, record),
+          );
+          setSelectedAlert({ ...record, read: false });
         }
       })
       .finally(() => {
@@ -148,82 +239,24 @@ export default function AlertsScreen() {
     return () => {
       cancelled = true;
     };
-  }, [alertIdParam, alerts, router, upsertAlert, userId]);
+  }, [alertIdParam, alerts, queryClient, router, upsertAlert, userId]);
 
-  React.useEffect(() => {
-    let cancelled = false;
-
+  const handleRefresh = React.useCallback(() => {
     if (!userId) {
-      setInitializing(false);
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    setInitializing(true);
-    setErrorMessage(null);
-
-    fetchRange(0, PAGE_SIZE - 1)
-      .then((data) => {
-        if (cancelled) return;
-        replaceAlerts(data);
-        setHasMore(data.length === PAGE_SIZE);
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        setErrorMessage(error instanceof Error ? error.message : 'Unable to load alerts.');
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setInitializing(false);
-          setRefreshing(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [userId, fetchRange, replaceAlerts]);
-
-  const handleRefresh = React.useCallback(async () => {
-    if (!userId) {
+      replaceAlerts([]);
       return;
     }
 
-    setRefreshing(true);
-    setErrorMessage(null);
+    refetch({ throwOnError: false }).catch(() => undefined);
+  }, [refetch, replaceAlerts, userId]);
 
-    try {
-      const data = await fetchRange(0, PAGE_SIZE - 1);
-      replaceAlerts(data);
-      setHasMore(data.length === PAGE_SIZE);
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Unable to refresh alerts.');
-    } finally {
-      setRefreshing(false);
-    }
-  }, [userId, fetchRange, replaceAlerts]);
-
-  const handleEndReached = React.useCallback(async () => {
-    if (!userId || fetchingMore || initializing || refreshing || !hasMore) {
+  const handleEndReached = React.useCallback(() => {
+    if (!userId || !hasNextPage || fetchingMore || initializing || refreshing) {
       return;
     }
 
-    setFetchingMore(true);
-
-    try {
-      const start = alerts.length;
-      const data = await fetchRange(start, start + PAGE_SIZE - 1);
-      appendAlerts(data);
-      if (data.length < PAGE_SIZE) {
-        setHasMore(false);
-      }
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Unable to load more alerts.');
-    } finally {
-      setFetchingMore(false);
-    }
-  }, [userId, fetchingMore, initializing, refreshing, hasMore, alerts.length, fetchRange, appendAlerts]);
+    fetchNextPage().catch(() => undefined);
+  }, [userId, hasNextPage, fetchingMore, initializing, refreshing, fetchNextPage]);
 
   React.useEffect(() => {
     if (!userId) {
@@ -239,6 +272,10 @@ export default function AlertsScreen() {
           const record = payload.new as FraudAlert | null;
           if (record) {
             upsertAlert(record);
+            queryClient.setQueryData<InfiniteData<AlertsPageResult, number>>(
+              ['fraudAlerts', userId],
+              (existing) => mergeAlertIntoCache(existing, record),
+            );
           }
         },
       )
@@ -249,6 +286,10 @@ export default function AlertsScreen() {
           const record = payload.new as FraudAlert | null;
           if (record) {
             upsertAlert(record);
+            queryClient.setQueryData<InfiniteData<AlertsPageResult, number>>(
+              ['fraudAlerts', userId],
+              (existing) => mergeAlertIntoCache(existing, record),
+            );
           }
         },
       )
@@ -257,7 +298,7 @@ export default function AlertsScreen() {
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [userId, upsertAlert]);
+  }, [queryClient, upsertAlert, userId]);
 
   const handleSelectAlert = React.useCallback((alertItem: AlertWithRead) => {
     setSelectedAlert(alertItem);
