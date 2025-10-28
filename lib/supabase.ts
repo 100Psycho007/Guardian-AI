@@ -22,6 +22,7 @@ export type Database = {
           avatar_url: string | null;
           created_at: string;
           full_name: string | null;
+          reputation_score: number | null;
           id: string;
           phone: string | null;
           scan_stats: Json;
@@ -31,15 +32,18 @@ export type Database = {
           avatar_url?: string | null;
           created_at?: string;
           full_name?: string | null;
+          reputation_score?: number | null;
           id: string;
           phone?: string | null;
           scan_stats?: Json;
           updated_at?: string;
         };
+
         Update: {
           avatar_url?: string | null;
           created_at?: string;
           full_name?: string | null;
+          reputation_score?: number | null;
           id?: string;
           phone?: string | null;
           scan_stats?: Json;
