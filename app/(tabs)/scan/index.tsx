@@ -1,5 +1,5 @@
 import React from 'react';
-import { Linking, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Image, Linking, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Camera, CameraType, FlashMode } from 'expo-camera';
 import { PermissionStatus } from 'expo-modules-core';
 import * as Haptics from 'expo-haptics';
@@ -7,7 +7,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import * as FileSystem from 'expo-file-system';
 import { useIsFocused } from '@react-navigation/native';
 import { useNetInfo } from '@react-native-community/netinfo';
-import { Link } from 'expo-router';
+import { Link, useRouter } from 'expo-router';
 import {
   Button,
   IconButton,
@@ -24,6 +24,7 @@ import { ThemedView } from '../../../components/Themed';
 import { LoadingOverlay, LoadingStep, LoadingStepStatus } from '../../../components/LoadingOverlay';
 import {
   PendingScan,
+  StoredScanResult,
   addPendingScan,
   addStoredResult,
   loadPendingScans,
@@ -68,6 +69,7 @@ function initialSteps() {
 
 export default function ScanScreen() {
   const { session } = useAuth();
+  const router = useRouter();
   const userId = session?.user?.id;
   const theme = useTheme();
   const insets = useSafeAreaInsets();
@@ -84,6 +86,9 @@ export default function ScanScreen() {
     message: '',
   });
   const [overlayState, setOverlayState] = React.useState<OverlayState | null>(null);
+  const [previewPhoto, setPreviewPhoto] = React.useState<{ uri: string; capturedAt: number } | null>(null);
+  const [previewError, setPreviewError] = React.useState<string | null>(null);
+  const [previewProcessing, setPreviewProcessing] = React.useState(false);
 
   const overlayRetryRef = React.useRef<(() => void) | null>(null);
   const cameraRef = React.useRef<Camera | null>(null);
@@ -333,7 +338,7 @@ export default function ScanScreen() {
 
         const analysis = await analyzeScan(item);
         updateStepStatus('analyze', 'complete');
-        await addStoredResult({
+        const storedResult: StoredScanResult = {
           id: item.id,
           userId: item.userId,
           bucket: item.bucket,
@@ -341,7 +346,8 @@ export default function ScanScreen() {
           createdAt: item.createdAt,
           processedAt: Date.now(),
           response: analysis,
-        });
+        };
+        await addStoredResult(storedResult);
 
         if (!options.ephemeral) {
           const nextQueue = await removePendingScan(item.id);
@@ -358,6 +364,15 @@ export default function ScanScreen() {
           setTimeout(() => {
             hideOverlay();
           }, 1200);
+        } else if (options.context === 'capture' && options.ephemeral) {
+          setPreviewPhoto(null);
+          setTimeout(() => {
+            hideOverlay();
+            router.push({
+              pathname: '/(tabs)/scan/result/[id]',
+              params: { id: storedResult.id },
+            });
+          }, 650);
         }
 
         return true;
@@ -427,7 +442,9 @@ export default function ScanScreen() {
       isOnline,
       persistQueueItem,
       removePendingScan,
+      router,
       setOverlayState,
+      setPreviewPhoto,
       setQueueState,
       showOverlay,
       updateOverlaySteps,
@@ -481,7 +498,7 @@ export default function ScanScreen() {
   }, [isOnline, processQueue, queue.length]);
 
   const handleCapture = React.useCallback(async () => {
-    if (!cameraRef.current || capturingRef.current) return;
+    if (!cameraRef.current || capturingRef.current || previewProcessing) return;
     if (!userId) {
       showSnackbar('You must be signed in to capture scans.');
       return;
@@ -490,31 +507,72 @@ export default function ScanScreen() {
     capturingRef.current = true;
     currentStepRef.current = 'capture';
 
-    const steps = initialSteps();
+    try {
+      const photo = await cameraRef.current.takePictureAsync({ quality: 1, skipProcessing: true });
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      setPreviewPhoto({ uri: photo.uri, capturedAt: Date.now() });
+      setPreviewError(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to capture scan. Please try again.';
+      showSnackbar(message);
+    } finally {
+      capturingRef.current = false;
+    }
+  }, [cameraRef, previewProcessing, setPreviewError, setPreviewPhoto, showSnackbar, userId]);
+
+  const handleRetake = React.useCallback(() => {
+    if (previewPhoto) {
+      FileSystem.deleteAsync(previewPhoto.uri, { idempotent: true }).catch(() => undefined);
+    }
+    setPreviewPhoto(null);
+    setPreviewError(null);
+  }, [previewPhoto]);
+
+  const handleConfirmPreview = React.useCallback(async () => {
+    if (!previewPhoto || previewProcessing) return;
+    if (!userId) {
+      showSnackbar('You must be signed in to process scans.');
+      return;
+    }
+
+    setPreviewProcessing(true);
+    setPreviewError(null);
+    currentStepRef.current = 'compress';
+
+    const steps = initialSteps().map((step) => {
+      if (step.key === 'capture') {
+        return { ...step, status: 'complete' };
+      }
+      if (step.key === 'compress') {
+        return { ...step, status: 'active' };
+      }
+      return step;
+    });
+
     showOverlay({
       context: 'capture',
       title: 'Processing scan',
-      message: 'Capturing image…',
+      message: 'Optimizing image…',
       steps,
       dismissLabel: 'Close',
     });
 
-    try {
-      const photo = await cameraRef.current.takePictureAsync({ quality: 1, skipProcessing: true });
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      updateStepStatus('capture', 'complete');
-      currentStepRef.current = 'compress';
-      updateStepStatus('compress', 'active');
-      setOverlayState((prev) => (prev ? { ...prev, message: 'Optimizing image…' } : prev));
+    updateStepStatus('capture', 'complete');
+    updateStepStatus('compress', 'active');
 
-      const optimized = await compressImage(photo.uri);
+    try {
+      const optimized = await compressImage(previewPhoto.uri);
       updateStepStatus('compress', 'complete');
       setOverlayState((prev) => (prev ? { ...prev, message: 'Preparing upload…' } : prev));
+
+      if (optimized.uri !== previewPhoto.uri) {
+        await FileSystem.deleteAsync(previewPhoto.uri, { idempotent: true }).catch(() => undefined);
+      }
 
       const id = createUniqueId();
       const storagePath = `${BUCKET_NAME}/${userId}/${id}.jpg`;
       const metadata = {
-        capturedAt: new Date().toISOString(),
+        capturedAt: new Date(previewPhoto.capturedAt).toISOString(),
       };
 
       const baseItem: PendingScan = {
@@ -560,17 +618,24 @@ export default function ScanScreen() {
               );
             }
           : null;
+        setPreviewPhoto(null);
         return;
       }
 
-      await processScanItem(baseItem, { context: 'capture', ephemeral: true, stepsInitialized: true, skipDeletion: false });
+      await processScanItem(baseItem, {
+        context: 'capture',
+        ephemeral: true,
+        stepsInitialized: true,
+        skipDeletion: false,
+      });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to capture scan. Please try again.';
+      const message = error instanceof Error ? error.message : 'Failed to process scan. Please try again.';
+      setPreviewError(message);
       setOverlayState((prev) =>
         prev
           ? {
               ...prev,
-              title: 'Capture failed',
+              title: 'Processing failed',
               message,
               error: message,
             }
@@ -578,16 +643,19 @@ export default function ScanScreen() {
       );
       overlayRetryRef.current = () => hideOverlay();
     } finally {
-      capturingRef.current = false;
+      setPreviewProcessing(false);
     }
   }, [
-    cameraRef,
     compressImage,
     hideOverlay,
     isOnline,
     persistQueueItem,
+    previewPhoto,
+    previewProcessing,
     processScanItem,
     setOverlayState,
+    setPreviewError,
+    setPreviewPhoto,
     showOverlay,
     showSnackbar,
     updateOverlaySteps,
@@ -612,6 +680,7 @@ export default function ScanScreen() {
   }, []);
 
   const pendingCount = queue.length;
+  const captureDisabled = !cameraReady || previewProcessing || Boolean(previewPhoto);
 
   if (permissionStatus === null) {
     return (
@@ -699,9 +768,9 @@ export default function ScanScreen() {
           <TouchableOpacity
             accessibilityRole="button"
             accessibilityLabel="Capture receipt"
-            style={[styles.captureButton, !cameraReady ? styles.captureButtonDisabled : null]}
+            style={[styles.captureButton, captureDisabled ? styles.captureButtonDisabled : null]}
             onPress={handleCapture}
-            disabled={!cameraReady}
+            disabled={captureDisabled}
           >
             <View style={styles.captureInner} />
           </TouchableOpacity>
@@ -709,6 +778,31 @@ export default function ScanScreen() {
         </View>
         <Text style={styles.helperText}>Align the UPI receipt within the frame before capturing.</Text>
       </View>
+
+      {previewPhoto ? (
+        <View style={[styles.previewOverlay, { paddingTop: insets.top + 24 }]}> 
+          <View style={styles.previewImageContainer}>
+            <Image source={{ uri: previewPhoto.uri }} style={styles.previewImage} resizeMode="contain" />
+          </View>
+          <View style={[styles.previewActions, { paddingBottom: insets.bottom + 24 }]}> 
+            {previewError ? <Text style={[styles.previewError, { color: theme.colors.error }]}>{previewError}</Text> : null}
+            <View style={styles.previewButtons}>
+              <Button mode="outlined" onPress={handleRetake} disabled={previewProcessing} style={styles.previewButton}>
+                Retake
+              </Button>
+              <Button
+                mode="contained"
+                onPress={handleConfirmPreview}
+                loading={previewProcessing}
+                disabled={previewProcessing}
+                style={styles.previewButton}
+              >
+                Confirm
+              </Button>
+            </View>
+          </View>
+        </View>
+      ) : null}
 
       <LoadingOverlay
         visible={Boolean(overlayState?.visible)}
@@ -852,6 +946,42 @@ const styles = StyleSheet.create({
   },
   helperText: {
     color: 'white',
+    textAlign: 'center',
+  },
+  previewOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  previewImageContainer: {
+    width: '100%',
+    aspectRatio: 3 / 4,
+    borderRadius: 20,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  previewImage: {
+    width: '100%',
+    height: '100%',
+  },
+  previewActions: {
+    width: '100%',
+    gap: 12,
+    marginTop: 24,
+  },
+  previewButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 16,
+  },
+  previewButton: {
+    flex: 1,
+  },
+  previewError: {
     textAlign: 'center',
   },
   centered: {
