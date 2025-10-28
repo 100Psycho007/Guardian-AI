@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "Expo Router Starter",
+    "slug": "expo-router-starter",
+    "version": "1.0.0",
+    "scheme": "exporouterstarter",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {},
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router"
+    ]
+  }
+}
