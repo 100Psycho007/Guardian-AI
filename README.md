@@ -42,9 +42,10 @@ Open on a simulator or device from the Expo Dev Tools.
 
 - `app/` — Route-based file system navigation powered by Expo Router
   - `(auth)/` — Authentication stack with a placeholder Sign In screen
-  - `(tabs)/` — Main app tabs (Home, Scan, Settings) with Scan sub-routes
-- `components/` — Reusable UI components
-- `lib/` — Theming and environment helpers
+  - `(tabs)/` — Main app tabs (Home, Alerts, Scan, Settings) with Scan sub-routes
+- `components/` — Reusable UI components (RiskMeter, AlertCard, AlertDetailsModal, etc.)
+- `contexts/` — Shared providers such as `AuthContext` and the alerts store
+- `lib/` — Theming, environment helpers, and Supabase client utilities
 - `store/` — Placeholder global state store
 - `hooks/` — Reusable hooks
 
@@ -60,6 +61,17 @@ See `.env.example` for the expected format. Create a `.env` file locally to run 
 ## Supabase backend
 
 The Supabase schema, storage, and realtime configuration are documented in [docs/supabase-setup.md](docs/supabase-setup.md). Apply the initial schema by running the SQL from `supabase/migrations/20241028113000_initial_schema.sql` in the Supabase SQL Editor, or push it through the Supabase CLI after linking your project.
+
+## Alerts feed
+
+The Alerts tab surfaces Supabase `fraud_alerts` records for the signed-in user. It provides:
+
+- Severity filter chips for All/Critical/High/Medium/Low views
+- Pull-to-refresh, infinite scroll, and realtime updates for new or updated alerts
+- A details modal with an accessible risk breakdown, contextual notes, and mark-as-read controls
+- A tab badge that reflects the current unread count via the shared alerts store
+
+Read state is tracked per session inside `AlertStoreProvider` so the UI can respond instantly without incurring extra round-trips or schema changes. The trade-off is that read markers reset when the app is restarted or the user signs out. Persisting this state across sessions would require introducing a dedicated Supabase table (or column) to capture per-user alert metadata.
 
 ## Tooling
 
