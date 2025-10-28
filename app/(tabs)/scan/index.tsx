@@ -8,15 +8,7 @@ import * as FileSystem from 'expo-file-system';
 import { useIsFocused } from '@react-navigation/native';
 import { Link, useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
-import {
-  Button,
-  IconButton,
-  Text,
-  useTheme,
-  ActivityIndicator,
-  Snackbar,
-  Surface,
-} from 'react-native-paper';
+import { Button, IconButton, Text, useTheme, ActivityIndicator, Surface } from 'react-native-paper';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -34,6 +26,7 @@ import {
 } from '../../../lib/scanQueue';
 import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../../hooks/useAuth';
+import { useToast } from '../../../hooks/useToast';
 import { useConnectivity } from '../../../contexts/ConnectivityContext';
 
 const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
@@ -77,6 +70,7 @@ export default function ScanScreen() {
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
   const { isOnline } = useConnectivity();
+  const { showToast } = useToast();
   const isFocused = useIsFocused();
 
   const [permissionStatus, setPermissionStatus] = React.useState<PermissionStatus | null>(null);
@@ -84,10 +78,6 @@ export default function ScanScreen() {
   const [cameraType, setCameraType] = React.useState<CameraType>(CameraType.back);
   const [cameraReady, setCameraReady] = React.useState(false);
   const [queue, setQueue] = React.useState<PendingScan[]>([]);
-  const [snackbar, setSnackbar] = React.useState<{ visible: boolean; message: string }>({
-    visible: false,
-    message: '',
-  });
   const [overlayState, setOverlayState] = React.useState<OverlayState | null>(null);
   const [previewPhoto, setPreviewPhoto] = React.useState<{ uri: string; capturedAt: number } | null>(null);
   const [previewError, setPreviewError] = React.useState<string | null>(null);
@@ -104,10 +94,6 @@ export default function ScanScreen() {
   const setQueueState = React.useCallback((items: PendingScan[]) => {
     queueRef.current = items;
     setQueue(items);
-  }, []);
-
-  const showSnackbar = React.useCallback((message: string) => {
-    setSnackbar({ visible: true, message });
   }, []);
 
   const hideOverlay = React.useCallback(() => {
@@ -295,8 +281,13 @@ export default function ScanScreen() {
         };
       });
       overlayRetryRef.current = null;
+      showToast({
+        message: context === 'queue' ? 'Offline scan synced successfully.' : 'Scan processed successfully.',
+        type: 'success',
+        source: context === 'queue' ? 'scan.queue' : 'scan.capture',
+      });
     },
-    [],
+    [showToast],
   );
 
   const processScanItem = React.useCallback(
@@ -568,7 +559,7 @@ export default function ScanScreen() {
   const handleCapture = React.useCallback(async () => {
     if (!cameraRef.current || capturingRef.current || previewProcessing) return;
     if (!userId) {
-      showSnackbar('You must be signed in to capture scans.');
+      showToast({ message: 'You must be signed in to capture scans.', type: 'error', source: 'scan.capture' });
       return;
     }
 
@@ -582,11 +573,11 @@ export default function ScanScreen() {
       setPreviewError(null);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to capture scan. Please try again.';
-      showSnackbar(message);
+      showToast({ message, type: 'error', source: 'scan.capture' });
     } finally {
       capturingRef.current = false;
     }
-  }, [cameraRef, previewProcessing, setPreviewError, setPreviewPhoto, showSnackbar, userId]);
+  }, [cameraRef, previewProcessing, setPreviewError, setPreviewPhoto, showToast, userId]);
 
   const handleRetake = React.useCallback(() => {
     if (previewPhoto) {
@@ -599,7 +590,7 @@ export default function ScanScreen() {
   const handleConfirmPreview = React.useCallback(async () => {
     if (!previewPhoto || previewProcessing) return;
     if (!userId) {
-      showSnackbar('You must be signed in to process scans.');
+      showToast({ message: 'You must be signed in to process scans.', type: 'error', source: 'scan.process' });
       return;
     }
 
@@ -677,7 +668,7 @@ export default function ScanScreen() {
               }
             : prev,
         );
-        showSnackbar('Scan saved and will sync when back online.');
+        showToast({ message: 'Scan saved and will sync when back online.', type: 'info', source: 'scan.offline_queue' });
         overlayRetryRef.current = isOnline
           ? () => {
               hideOverlay();
@@ -725,7 +716,7 @@ export default function ScanScreen() {
     setPreviewError,
     setPreviewPhoto,
     showOverlay,
-    showSnackbar,
+    showToast,
     updateOverlaySteps,
     updateStepStatus,
     userId,
@@ -735,9 +726,9 @@ export default function ScanScreen() {
     const result = await Camera.requestCameraPermissionsAsync();
     setPermissionStatus(result.status);
     if (result.status !== 'granted') {
-      showSnackbar('Camera permission is required to scan receipts.');
+      showToast({ message: 'Camera permission is required to scan receipts.', type: 'error', source: 'scan.permission' });
     }
-  }, [showSnackbar]);
+  }, [showToast]);
 
   const toggleFlash = React.useCallback(() => {
     setFlashMode((current) => (current === FlashMode.off ? FlashMode.on : FlashMode.off));
@@ -883,14 +874,6 @@ export default function ScanScreen() {
         onDismiss={overlayState?.dismissLabel ? hideOverlay : undefined}
         onRetry={overlayRetryRef.current ? () => overlayRetryRef.current?.() : undefined}
       />
-
-      <Snackbar
-        visible={snackbar.visible}
-        onDismiss={() => setSnackbar({ visible: false, message: '' })}
-        duration={4000}
-      >
-        {snackbar.message}
-      </Snackbar>
     </ThemedView>
   );
 }
