@@ -42,7 +42,7 @@ Open on a simulator or device from the Expo Dev Tools.
 
 - `app/` — Route-based file system navigation powered by Expo Router
   - `(auth)/` — Authentication stack with a placeholder Sign In screen
-  - `(tabs)/` — Main app tabs (Home, Alerts, Scan, Settings) with Scan sub-routes
+  - `(tabs)/` — Main app tabs (Home, Alerts, Scan, Profile) with Scan sub-routes
 - `components/` — Reusable UI components (RiskMeter, AlertCard, AlertDetailsModal, etc.)
 - `contexts/` — Shared providers such as `AuthContext` and the alerts store
 - `lib/` — Theming, environment helpers, and Supabase client utilities

@@ -5,6 +5,11 @@ export const ONBOARDING_COMPLETE_KEY = 'onboarding:completed';
 export const BIOMETRIC_SESSION_KEY = 'auth:biometric_session';
 export const BIOMETRIC_ENABLED_KEY = 'auth:biometric_enabled';
 export const LAST_EMAIL_KEY = 'auth:last_email';
+export const THEME_PREFERENCE_KEY = 'settings:theme_preference';
+export const PUSH_NOTIFICATIONS_ENABLED_KEY = 'settings:push_enabled';
+export const PUSH_NOTIFICATIONS_TOKEN_KEY = 'settings:push_token';
+
+export type ThemePreferenceValue = 'system' | 'light' | 'dark';
 
 export type StoredBiometricSession = {
   refresh_token: string;
@@ -73,4 +78,60 @@ export async function readLastEmail() {
 
 export async function clearLastEmail() {
   await AsyncStorage.removeItem(LAST_EMAIL_KEY);
+}
+
+function getUserScopedKey(baseKey: string, userId: string) {
+  return `${baseKey}:${userId}`;
+}
+
+export async function readThemePreference(): Promise<ThemePreferenceValue | null> {
+  const value = await AsyncStorage.getItem(THEME_PREFERENCE_KEY);
+  if (value === 'light' || value === 'dark' || value === 'system') {
+    return value;
+  }
+  return null;
+}
+
+export async function saveThemePreference(preference: ThemePreferenceValue) {
+  await AsyncStorage.setItem(THEME_PREFERENCE_KEY, preference);
+}
+
+export async function clearThemePreference() {
+  await AsyncStorage.removeItem(THEME_PREFERENCE_KEY);
+}
+
+export async function readNotificationPreference(userId: string) {
+  const key = getUserScopedKey(PUSH_NOTIFICATIONS_ENABLED_KEY, userId);
+  const value = await AsyncStorage.getItem(key);
+  return value === 'true';
+}
+
+export async function saveNotificationPreference(userId: string, enabled: boolean) {
+  const key = getUserScopedKey(PUSH_NOTIFICATIONS_ENABLED_KEY, userId);
+  if (enabled) {
+    await AsyncStorage.setItem(key, 'true');
+  } else {
+    await AsyncStorage.removeItem(key);
+  }
+}
+
+export async function readNotificationToken(userId: string) {
+  const key = getUserScopedKey(PUSH_NOTIFICATIONS_TOKEN_KEY, userId);
+  const value = await AsyncStorage.getItem(key);
+  return value ?? null;
+}
+
+export async function saveNotificationToken(userId: string, token: string) {
+  const key = getUserScopedKey(PUSH_NOTIFICATIONS_TOKEN_KEY, userId);
+  await AsyncStorage.setItem(key, token);
+}
+
+export async function clearNotificationToken(userId: string) {
+  const key = getUserScopedKey(PUSH_NOTIFICATIONS_TOKEN_KEY, userId);
+  await AsyncStorage.removeItem(key);
+}
+
+export async function clearNotificationPreference(userId: string) {
+  await saveNotificationPreference(userId, false);
+  await clearNotificationToken(userId);
 }
