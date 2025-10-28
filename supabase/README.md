@@ -6,7 +6,7 @@ This directory stores project-specific metadata for the Supabase CLI and serverl
 
 - `config.toml` – Local CLI configuration. Update `project_id` with your Supabase project reference before running CLI commands.
 - `migrations/` – SQL files that can be executed through the Supabase SQL Editor or the CLI. Migrations should be committed.
-- `functions/` – Edge function source code. The `analyze-upi` implementation performs UPI OCR + fraud analysis and can be served locally with `supabase functions serve analyze-upi`.
+- `functions/` – Edge function source code. The `analyze-upi` implementation performs UPI OCR + fraud analysis and can be served locally with `supabase functions serve analyze-upi`. The `send-notification` function delivers Expo push notifications with retries and can be served locally with `supabase functions serve send-notification`.
 
 A `.gitkeep` file remains so additional function subdirectories stay tracked even when empty.
 
