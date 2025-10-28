@@ -14,6 +14,7 @@ export type ProfileRow = {
   created_at: string;
   updated_at: string;
   scan_stats: Json;
+  device_token: string | null;
 };
 
 export type ScanStatus = 'pending' | 'processing' | 'complete' | 'failed';

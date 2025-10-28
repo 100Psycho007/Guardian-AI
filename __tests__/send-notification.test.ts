@@ -21,6 +21,7 @@ describe('validateNotificationPayload', () => {
     expect(result.title).toBe('Fraud alert');
     expect(result.body).toBe('Suspicious activity detected');
     expect(result.data).toEqual({ riskLevel: 'high' });
+    expect(result.badge).toBeNull();
   });
 
   it('accepts multiple tokens', () => {
@@ -32,6 +33,26 @@ describe('validateNotificationPayload', () => {
     });
 
     expect(payload.tokens).toEqual(tokens);
+  });
+
+  it('normalizes optional badge values', () => {
+    const payload = validateNotificationPayload({
+      deviceToken: sampleToken,
+      title: 'Badge',
+      body: 'Testing badge',
+      badge: '4',
+    });
+
+    expect(payload.badge).toBe(4);
+
+    expect(() =>
+      validateNotificationPayload({
+        deviceToken: sampleToken,
+        title: 'Invalid badge',
+        body: 'Test',
+        badge: -1,
+      }),
+    ).toThrow(ValidationError);
   });
 
   it('rejects invalid tokens', () => {

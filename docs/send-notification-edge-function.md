@@ -43,7 +43,8 @@ supabase functions serve send-notification --env-file supabase/functions/.env.lo
   "title": "Fraud alert",
   "body": "We detected suspicious activity",
   "data": {"riskLevel": "critical", "alertId": "uuid"},      // optional object
-  "priority": "high"                                              // optional string/boolean flag
+  "priority": "high",                                             // optional string/boolean flag
+  "badge": 1                                                       // optional integer (iOS badge count)
 }
 ```
 
@@ -52,6 +53,7 @@ Rules:
 - `deviceToken` must be a valid Expo push token (either a single string or an array of strings).
 - `data` must be an object when provided. The function inspects `riskLevel`, `severity`, `critical`, or `isCritical` to decide whether critical alerts should be sent with `high` priority.
 - `priority` accepts booleans or strings (`"high"`, `"critical"`, `"urgent"`, `"default"`, `"normal"`).
+- `badge` is optional. Provide a non-negative integer to set the iOS app badge count.
 
 ## Response shape
 

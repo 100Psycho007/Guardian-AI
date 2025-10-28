@@ -455,6 +455,71 @@ function mapRiskToSeverity(riskScore: number): { severity: 'low' | 'medium' | 'h
   return { severity: 'medium', status: 'open' };
 }
 
+async function dispatchHighRiskNotification(params: {
+  supabase: SupabaseDbClient;
+  requestId: string;
+  deviceToken: string;
+  alertId: string;
+  scanId: string;
+  severity: 'high' | 'critical';
+  riskScore: number;
+  riskLevel: RiskLevel;
+  upiDetails: UpiDetails;
+}) {
+  const { supabase, requestId, deviceToken, alertId, scanId, severity, riskScore, riskLevel, upiDetails } = params;
+
+  const entityLabel = upiDetails.payeeName ?? upiDetails.payerName ?? upiDetails.upiId ?? null;
+  const title = severity === 'critical' ? 'Critical fraud alert' : 'High risk fraud alert';
+  const messageSubject = entityLabel ? `${entityLabel}` : 'A recent scan';
+  const severityLabel = severity === 'critical' ? 'critical' : 'high';
+  const body = `${messageSubject} was flagged as ${severityLabel} risk (score ${Math.round(riskScore)}). Tap to review the details.`;
+
+  try {
+    const { data, error } = await supabase.functions.invoke('send-notification', {
+      body: {
+        deviceToken,
+        title,
+        body,
+        priority: 'high',
+        badge: 1,
+        data: {
+          type: 'fraud_alert',
+          alertId,
+          scanId,
+          severity,
+          riskScore,
+          riskLevel,
+        },
+      },
+    });
+
+    if (error) {
+      log('warn', 'Failed to dispatch high risk notification', {
+        requestId,
+        scanId,
+        alertId,
+        error: error.message ?? error.name ?? 'Unknown error',
+      });
+      return;
+    }
+
+    log('info', 'High risk notification dispatched', {
+      requestId,
+      scanId,
+      alertId,
+      severity,
+      response: data,
+    });
+  } catch (error) {
+    log('warn', 'High risk notification threw during dispatch', {
+      requestId,
+      scanId,
+      alertId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 function buildScanMetadata(params: {
   requestId: string;
   bucket: string;
@@ -577,6 +642,7 @@ serve(async (req) => {
   let activeScanId: string | null = null;
   let incrementStats = false;
   let processedAt = new Date().toISOString();
+  let profileDeviceToken: string | null = null;
 
   try {
     const env = ensureEnvironment(requestId);
@@ -608,13 +674,15 @@ serve(async (req) => {
     // Fetch existing profile stats for later update
     const { data: profileRow, error: profileError } = await supabase
       .from('profiles')
-      .select('scan_stats')
+      .select('scan_stats, device_token')
       .eq('id', user.id)
       .maybeSingle();
 
     if (profileError) {
       log('warn', 'Failed to load profile stats', { requestId, error: profileError.message });
     }
+
+    profileDeviceToken = typeof profileRow?.device_token === 'string' ? profileRow.device_token : null;
 
     const previousStats = parseProfileScanStats(profileRow?.scan_stats ?? null);
 
@@ -839,7 +907,11 @@ serve(async (req) => {
         });
       }
 
+      let previousAlertSeverity: 'low' | 'medium' | 'high' | 'critical' | null = null;
+
       if (existingAlert) {
+        previousAlertSeverity = existingAlert.severity;
+
         const { data: updatedAlert, error: updateAlertError } = await supabase
           .from('fraud_alerts')
           .update({
@@ -881,6 +953,27 @@ serve(async (req) => {
           });
         } else {
           alertSummary = insertedAlert;
+        }
+      }
+
+      if (
+        alertSummary &&
+        profileDeviceToken &&
+        (alertSummary.severity === 'high' || alertSummary.severity === 'critical')
+      ) {
+        const previouslyHigh = previousAlertSeverity === 'high' || previousAlertSeverity === 'critical';
+        if (!previouslyHigh || previousAlertSeverity !== alertSummary.severity) {
+          await dispatchHighRiskNotification({
+            supabase: supabase!,
+            requestId,
+            deviceToken: profileDeviceToken,
+            alertId: alertSummary.id,
+            scanId: activeScanId,
+            severity: alertSummary.severity,
+            riskScore: finalAssessment.riskScore,
+            riskLevel: finalAssessment.riskLevel,
+            upiDetails,
+          });
         }
       }
     }

@@ -6,6 +6,7 @@ export interface NormalizedNotificationPayload {
   body: string;
   data: Record<string, unknown>;
   rawPriority: unknown;
+  badge: number | null;
 }
 
 export class ValidationError extends Error {
@@ -73,12 +74,39 @@ function ensureExpoTokens(tokens: string[]): void {
   }
 }
 
+function normalizeBadge(value: unknown): number | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value) || value < 0) {
+      throw new ValidationError('Invalid badge: expected a non-negative integer');
+    }
+    return Math.floor(value);
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+    const parsed = Number.parseFloat(trimmed);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      throw new ValidationError('Invalid badge: expected a non-negative integer');
+    }
+    return Math.floor(parsed);
+  }
+
+  throw new ValidationError('Invalid badge: expected a non-negative integer');
+}
+
 export function validateNotificationPayload(input: unknown): NormalizedNotificationPayload {
   if (!isRecord(input)) {
     throw new ValidationError('Request body must be a JSON object');
   }
 
-  const { deviceToken, title, body, data, priority } = input;
+  const { deviceToken, title, body, data, priority, badge } = input;
 
   const tokens = normalizeTokens(deviceToken);
   ensureExpoTokens(tokens);
@@ -96,6 +124,7 @@ export function validateNotificationPayload(input: unknown): NormalizedNotificat
     body: normalizedBody,
     data: isRecord(data) ? data : {},
     rawPriority: priority,
+    badge: normalizeBadge(badge),
   };
 }
 

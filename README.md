@@ -62,6 +62,10 @@ See `.env.example` for the expected format. Create a `.env` file locally to run 
 
 The Supabase schema, storage, and realtime configuration are documented in [docs/supabase-setup.md](docs/supabase-setup.md). Apply the initial schema by running the SQL from `supabase/migrations/20241028113000_initial_schema.sql` in the Supabase SQL Editor, or push it through the Supabase CLI after linking your project.
 
+## Push notifications
+
+Expo push notifications power high/critical fraud alerts. Provision APNs and FCM credentials following [docs/push-notification-setup.md](docs/push-notification-setup.md) before shipping builds. The client stores the Expo token in `profiles.device_token`, and the Supabase `analyze-upi` function will automatically trigger the `send-notification` edge function for high-risk alerts.
+
 ## Alerts feed
 
 The Alerts tab surfaces Supabase `fraud_alerts` records for the signed-in user. It provides:
