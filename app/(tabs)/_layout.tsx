@@ -3,11 +3,11 @@ import { Redirect, Tabs } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 
 import { useAuth } from '../../hooks/useAuth';
-import { useAlertStore } from '../../contexts/AlertStoreContext';
+import { useUnreadAlertCount } from '../../hooks/useAlerts';
 
 export default function TabsLayout() {
   const { session, initializing } = useAuth();
-  const { unreadCount } = useAlertStore();
+  const unreadCount = useUnreadAlertCount();
 
   if (initializing) {
     return null;
