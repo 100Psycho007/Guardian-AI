@@ -92,6 +92,11 @@ export async function addStoredResult(result: StoredScanResult): Promise<StoredS
   return next;
 }
 
+export async function getStoredResultById(id: string): Promise<StoredScanResult | null> {
+  const results = await loadStoredResults();
+  return results.find((item) => item.id === id) ?? null;
+}
+
 export async function overwriteStoredResults(results: StoredScanResult[]) {
   await writeJson(SCAN_RESULTS_STORAGE_KEY, results.slice(0, MAX_STORED_RESULTS));
 }

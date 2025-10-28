@@ -1,7 +1,8 @@
 import React from 'react';
-import { FlatList, RefreshControl, StyleSheet, View } from 'react-native';
+import { FlatList, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Surface, Text, useTheme } from 'react-native-paper';
+import { useRouter } from 'expo-router';
 
 import { ThemedView } from '../../../components/Themed';
 import { loadStoredResults, StoredScanResult } from '../../../lib/scanQueue';
@@ -44,6 +45,7 @@ function getSummary(response: Record<string, unknown> | undefined) {
 
 export default function ScanHistoryScreen() {
   const theme = useTheme();
+  const router = useRouter();
   const [results, setResults] = React.useState<StoredScanResult[]>([]);
   const [refreshing, setRefreshing] = React.useState(false);
 
@@ -67,31 +69,42 @@ export default function ScanHistoryScreen() {
     }, [loadResults]),
   );
 
-  const renderItem = React.useCallback(({ item }: { item: StoredScanResult }) => {
-    const response = (item.response ?? undefined) as Record<string, unknown> | undefined;
-    const riskLevel = getRiskLevel(response);
-    const status = getStatus(response);
-    const summary = getSummary(response);
+  const renderItem = React.useCallback(
+    ({ item }: { item: StoredScanResult }) => {
+      const response = (item.response ?? undefined) as Record<string, unknown> | undefined;
+      const riskLevel = getRiskLevel(response);
+      const status = getStatus(response);
+      const summary = getSummary(response);
 
-    return (
-      <Surface elevation={1} style={styles.card}>
-        <Text variant="titleMedium" numberOfLines={1} style={styles.cardTitle}>
-          {summary}
-        </Text>
-        <Text variant="bodySmall" style={styles.cardSubtitle}>
-          Processed {formatTimestamp(item.processedAt)} • Status: {status}
-        </Text>
-        <View style={styles.cardFooter}>
-          <Text variant="labelLarge" style={[styles.pill, { color: theme.colors.primary }]}>
-            Risk: {riskLevel}
-          </Text>
-          <Text variant="bodySmall" style={styles.muted}>
-            Storage path: {item.storagePath}
-          </Text>
-        </View>
-      </Surface>
-    );
-  }, [theme.colors.primary]);
+      return (
+        <Pressable
+          accessibilityRole="button"
+          onPress={() =>
+            router.push({ pathname: '/(tabs)/scan/result/[id]', params: { id: item.id } })
+          }
+          style={({ pressed }) => [styles.cardPressable, pressed && styles.cardPressed]}
+        >
+          <Surface elevation={1} style={styles.card}>
+            <Text variant="titleMedium" numberOfLines={1} style={styles.cardTitle}>
+              {summary}
+            </Text>
+            <Text variant="bodySmall" style={styles.cardSubtitle}>
+              Processed {formatTimestamp(item.processedAt)} • Status: {status}
+            </Text>
+            <View style={styles.cardFooter}>
+              <Text variant="labelLarge" style={[styles.pill, { color: theme.colors.primary }]}>
+                Risk: {riskLevel}
+              </Text>
+              <Text variant="bodySmall" style={styles.muted}>
+                Storage path: {item.storagePath}
+              </Text>
+            </View>
+          </Surface>
+        </Pressable>
+      );
+    },
+    [router, theme.colors.primary],
+  );
 
   return (
     <ThemedView style={styles.container}>
@@ -127,6 +140,13 @@ const styles = StyleSheet.create({
   emptyList: {
     flex: 1,
     justifyContent: 'center',
+  },
+  cardPressable: {
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  cardPressed: {
+    opacity: 0.94,
   },
   card: {
     borderRadius: 16,
