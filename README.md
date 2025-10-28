@@ -46,8 +46,18 @@ Open on a simulator or device from the Expo Dev Tools.
 - `components/` — Reusable UI components (RiskMeter, AlertCard, AlertDetailsModal, etc.)
 - `contexts/` — Shared providers such as `AuthContext` and the alerts store
 - `lib/` — Theming, environment helpers, and Supabase client utilities
-- `store/` — Placeholder global state store
+- `store/` — Zustand stores for auth, alerts, and scans, plus shared selectors
 - `hooks/` — Reusable hooks
+
+## State management
+
+App state is coordinated with lightweight Zustand stores in `store/`:
+
+- `authStore` mirrors Supabase session state and biometric preferences via `useAuth`
+- `alertStore` manages unread counts, realtime inserts, and dashboard banner state via `useAlerts`
+- `scanStore` tracks the latest scans and computed profile stats exposed through `useScans`
+
+These stores expose typed selectors and lifecycle hooks (`useAlertsLoader`, `useAlertsRealtime`, `useScansLoader`) that hydrate the dashboard and alerts screens without duplicating provider trees.
 
 ## Environment variables
 

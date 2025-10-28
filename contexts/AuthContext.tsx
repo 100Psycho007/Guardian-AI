@@ -12,6 +12,7 @@ import {
   setBiometricEnabled as persistBiometricEnabled,
 } from '../lib/storage';
 import { supabase } from '../lib/supabase';
+import { resetAuthStore, useAuthStore } from '../store/authStore';
 
 export type SignInCredentials = {
   email: string;
@@ -56,33 +57,50 @@ async function determineBiometricAvailability() {
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [session, setSession] = React.useState<Session | null>(null);
-  const [initializing, setInitializing] = React.useState(true);
-  const [biometricAvailable, setBiometricAvailable] = React.useState(false);
-  const [isBiometricEnabled, setIsBiometricEnabled] = React.useState(false);
-  const [lastSignInEmail, setLastSignInEmail] = React.useState<string | null>(null);
+  const {
+    session,
+    initializing,
+    biometricAvailable,
+    isBiometricEnabled,
+    lastSignInEmail,
+    setSession,
+    setInitializing,
+    setBiometricAvailable,
+    setBiometricEnabled,
+    setLastSignInEmail,
+  } = useAuthStore();
 
-  const persistBiometricTokens = React.useCallback(async (nextSession: Session) => {
-    if (!nextSession?.refresh_token || !nextSession?.access_token) return;
+  const persistBiometricTokens = React.useCallback(
+    async (nextSession: Session) => {
+      if (!nextSession?.refresh_token || !nextSession?.access_token) return;
 
-    const payload = {
-      refresh_token: nextSession.refresh_token,
-      access_token: nextSession.access_token,
-    };
+      const payload = {
+        refresh_token: nextSession.refresh_token,
+        access_token: nextSession.access_token,
+      };
 
-    await saveBiometricSession(payload);
-    await persistBiometricEnabled(true);
-    setIsBiometricEnabled(true);
-  }, []);
+      await saveBiometricSession(payload);
+      await persistBiometricEnabled(true);
+      setBiometricEnabled(true);
+    },
+    [setBiometricEnabled],
+  );
 
   const clearBiometricPreference = React.useCallback(async () => {
     await clearBiometricSession();
     await persistBiometricEnabled(false);
-    setIsBiometricEnabled(false);
+    setBiometricEnabled(false);
+  }, [setBiometricEnabled]);
+
+  React.useEffect(() => {
+    return () => {
+      resetAuthStore();
+    };
   }, []);
 
   React.useEffect(() => {
     let isActive = true;
+    setInitializing(true);
 
     const initialize = async () => {
       try {
@@ -97,7 +115,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (!isActive) return;
 
         setSession(sessionResult.data.session ?? null);
-        setIsBiometricEnabled(Boolean(biometricEnabled && storedSession));
+        setBiometricEnabled(Boolean(biometricEnabled && storedSession));
         setLastSignInEmail(storedEmail);
         setBiometricAvailable(availability);
       } catch (error) {
@@ -111,7 +129,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     };
 
-    initialize();
+    void initialize();
 
     const {
       data: { subscription },
@@ -123,7 +141,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isActive = false;
       subscription.unsubscribe();
     };
-  }, []);
+  }, [setSession, setBiometricEnabled, setLastSignInEmail, setBiometricAvailable, setInitializing]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -135,12 +153,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     };
 
-    refreshAvailability();
+    void refreshAvailability();
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [setBiometricAvailable]);
 
   React.useEffect(() => {
     if (!session || !isBiometricEnabled) return;
@@ -176,7 +194,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       return {};
     },
-    [persistBiometricTokens, clearBiometricPreference],
+    [setSession, setLastSignInEmail, persistBiometricTokens, clearBiometricPreference],
   );
 
   const signUp = React.useCallback(
@@ -209,7 +227,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       return { needsVerification: !nextSession };
     },
-    [persistBiometricTokens, clearBiometricPreference],
+    [setSession, setLastSignInEmail, persistBiometricTokens, clearBiometricPreference],
   );
 
   const signOut = React.useCallback(async () => {
@@ -219,7 +237,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     await clearBiometricPreference();
     setSession(null);
-  }, [clearBiometricPreference]);
+  }, [clearBiometricPreference, setSession]);
 
   const signInWithBiometrics = React.useCallback(async () => {
     if (!biometricAvailable) {
@@ -267,7 +285,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     return {};
-  }, [biometricAvailable, clearBiometricPreference, persistBiometricTokens]);
+  }, [biometricAvailable, clearBiometricPreference, setSession, setLastSignInEmail, persistBiometricTokens]);
 
   const setBiometricPreference = React.useCallback(
     async (enabled: boolean) => {

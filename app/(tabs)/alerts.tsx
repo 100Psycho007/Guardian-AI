@@ -11,6 +11,7 @@ import { AlertDetailsModal } from '../../components/AlertDetailsModal';
 import { supabase, type FraudAlert } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
 import { useAlertStore, type AlertWithRead } from '../../contexts/AlertStoreContext';
+import { useAlertsRealtime } from '../../hooks/useAlerts';
 
 const PAGE_SIZE = 20;
 const FILTER_OPTIONS = ['all', 'critical', 'high', 'medium', 'low'] as const;
@@ -111,6 +112,21 @@ export default function AlertsScreen() {
   }, [localSearchParams.alertId]);
 
   const { alerts, replaceAlerts, upsertAlert, markAlertRead } = useAlertStore();
+
+  const handleRealtimeAlert = React.useCallback(
+    (record: FraudAlert) => {
+      if (!userId) {
+        return;
+      }
+      queryClient.setQueryData<InfiniteData<AlertsPageResult, number>>(
+        ['fraudAlerts', userId],
+        (existing) => mergeAlertIntoCache(existing, record),
+      );
+    },
+    [queryClient, userId],
+  );
+
+  useAlertsRealtime({ onAlert: handleRealtimeAlert });
 
   const [filter, setFilter] = React.useState<FilterOption>('all');
   const [selectedAlert, setSelectedAlert] = React.useState<AlertWithRead | null>(null);
@@ -257,48 +273,6 @@ export default function AlertsScreen() {
 
     fetchNextPage().catch(() => undefined);
   }, [userId, hasNextPage, fetchingMore, initializing, refreshing, fetchNextPage]);
-
-  React.useEffect(() => {
-    if (!userId) {
-      return;
-    }
-
-    const channel = supabase
-      .channel(`fraud_alerts:user:${userId}`)
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'fraud_alerts', filter: `user_id=eq.${userId}` },
-        (payload) => {
-          const record = payload.new as FraudAlert | null;
-          if (record) {
-            upsertAlert(record);
-            queryClient.setQueryData<InfiniteData<AlertsPageResult, number>>(
-              ['fraudAlerts', userId],
-              (existing) => mergeAlertIntoCache(existing, record),
-            );
-          }
-        },
-      )
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'fraud_alerts', filter: `user_id=eq.${userId}` },
-        (payload) => {
-          const record = payload.new as FraudAlert | null;
-          if (record) {
-            upsertAlert(record);
-            queryClient.setQueryData<InfiniteData<AlertsPageResult, number>>(
-              ['fraudAlerts', userId],
-              (existing) => mergeAlertIntoCache(existing, record),
-            );
-          }
-        },
-      )
-      .subscribe();
-
-    return () => {
-      void supabase.removeChannel(channel);
-    };
-  }, [queryClient, upsertAlert, userId]);
 
   const handleSelectAlert = React.useCallback((alertItem: AlertWithRead) => {
     setSelectedAlert(alertItem);
