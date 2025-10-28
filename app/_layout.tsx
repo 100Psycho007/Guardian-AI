@@ -12,6 +12,9 @@ import { AuthProvider } from '../contexts/AuthContext';
 import { AlertStoreProvider } from '../contexts/AlertStoreContext';
 import { NotificationPreferencesProvider } from '../contexts/NotificationPreferencesContext';
 import { useNotificationRouting } from '../hooks/useNotificationRouting';
+import { ReactQueryProvider } from '../contexts/ReactQueryProvider';
+import { ConnectivityProvider } from '../contexts/ConnectivityContext';
+import { OfflineBanner } from '../components/OfflineBanner';
 
 export default function RootLayout() {
   assertEnv();
@@ -26,15 +29,19 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <ThemeProvider>
-          <AuthProvider>
-            <NotificationPreferencesProvider>
-              <AlertStoreProvider>
-                <AppContent />
-              </AlertStoreProvider>
-            </NotificationPreferencesProvider>
-          </AuthProvider>
-        </ThemeProvider>
+        <ReactQueryProvider>
+          <ConnectivityProvider>
+            <ThemeProvider>
+              <AuthProvider>
+                <NotificationPreferencesProvider>
+                  <AlertStoreProvider>
+                    <AppContent />
+                  </AlertStoreProvider>
+                </NotificationPreferencesProvider>
+              </AuthProvider>
+            </ThemeProvider>
+          </ConnectivityProvider>
+        </ReactQueryProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
@@ -47,6 +54,7 @@ function AppContent() {
   return (
     <>
       <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
+      <OfflineBanner />
       <Stack screenOptions={{ headerShown: false }} />
     </>
   );

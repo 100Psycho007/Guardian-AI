@@ -6,8 +6,8 @@ import * as Haptics from 'expo-haptics';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as FileSystem from 'expo-file-system';
 import { useIsFocused } from '@react-navigation/native';
-import { useNetInfo } from '@react-native-community/netinfo';
 import { Link, useRouter } from 'expo-router';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   Button,
   IconButton,
@@ -27,12 +27,14 @@ import {
   StoredScanResult,
   addPendingScan,
   addStoredResult,
+  getScanRetryDelay,
   loadPendingScans,
   removePendingScan,
   updatePendingScan,
 } from '../../../lib/scanQueue';
 import { supabase } from '../../../lib/supabase';
 import { useAuth } from '../../../hooks/useAuth';
+import { useConnectivity } from '../../../contexts/ConnectivityContext';
 
 const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
 const BUCKET_NAME = 'scans';
@@ -73,7 +75,8 @@ export default function ScanScreen() {
   const userId = session?.user?.id;
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const netInfo = useNetInfo();
+  const queryClient = useQueryClient();
+  const { isOnline } = useConnectivity();
   const isFocused = useIsFocused();
 
   const [permissionStatus, setPermissionStatus] = React.useState<PermissionStatus | null>(null);
@@ -96,12 +99,7 @@ export default function ScanScreen() {
   const currentStepRef = React.useRef<StepKey>('capture');
   const queueRef = React.useRef<PendingScan[]>([]);
   const processingQueueRef = React.useRef(false);
-
-  const isOnline = React.useMemo(() => {
-    if (!netInfo.isConnected) return false;
-    if (netInfo.isInternetReachable === false) return false;
-    return true;
-  }, [netInfo.isConnected, netInfo.isInternetReachable]);
+  const retryTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const setQueueState = React.useCallback((items: PendingScan[]) => {
     queueRef.current = items;
@@ -272,6 +270,7 @@ export default function ScanScreen() {
         localUri: targetUri,
         attempts: item.attempts ?? 0,
         lastError: item.lastError ?? null,
+        nextRetryAt: item.nextRetryAt ?? Date.now(),
       };
 
       const nextQueue = await addPendingScan(queuedItem);
@@ -360,6 +359,10 @@ export default function ScanScreen() {
 
         finalizeSuccess(options.context);
 
+        if (userId) {
+          void queryClient.invalidateQueries({ queryKey: ['fraudAlerts', userId] });
+        }
+
         if (options.context === 'queue') {
           setTimeout(() => {
             hideOverlay();
@@ -406,16 +409,20 @@ export default function ScanScreen() {
           };
         });
 
+        const attempts = item.attempts + 1;
+        const retryAt = Date.now() + getScanRetryDelay(attempts);
         const queuedItem = await persistQueueItem({
           ...item,
-          attempts: item.attempts + 1,
+          attempts,
           lastError: message,
+          nextRetryAt: retryAt,
         });
 
         if (!options.ephemeral) {
           const nextQueue = await updatePendingScan(queuedItem.id, {
             attempts: queuedItem.attempts,
             lastError: queuedItem.lastError,
+            nextRetryAt: queuedItem.nextRetryAt,
           });
           setQueueState(nextQueue);
         }
@@ -423,7 +430,11 @@ export default function ScanScreen() {
         overlayRetryRef.current = isOnline
           ? () => {
               hideOverlay();
-              processScanItem(queuedItem, {
+              const immediateItem = { ...queuedItem, nextRetryAt: Date.now() };
+              updatePendingScan(immediateItem.id, { nextRetryAt: immediateItem.nextRetryAt })
+                .then(setQueueState)
+                .catch(() => undefined);
+              processScanItem(immediateItem, {
                 context: options.context,
                 ephemeral: false,
                 stepsInitialized: false,
@@ -441,6 +452,7 @@ export default function ScanScreen() {
       hideOverlay,
       isOnline,
       persistQueueItem,
+      queryClient,
       removePendingScan,
       router,
       setOverlayState,
@@ -451,6 +463,7 @@ export default function ScanScreen() {
       updateStepStatus,
       uploadToSupabase,
       updatePendingScan,
+      userId,
     ],
   );
 
@@ -459,9 +472,17 @@ export default function ScanScreen() {
     if (processingQueueRef.current) return;
     if (!queueRef.current.length) return;
 
+    const now = Date.now();
+    const pending = [...queueRef.current]
+      .filter((item) => (item.nextRetryAt ?? now) <= now)
+      .sort((a, b) => a.createdAt - b.createdAt);
+
+    if (pending.length === 0) {
+      return;
+    }
+
     processingQueueRef.current = true;
     try {
-      const pending = [...queueRef.current].sort((a, b) => a.createdAt - b.createdAt);
       for (const item of pending) {
         const steps = initialSteps().map((step) => {
           if (step.key === 'capture' || step.key === 'compress') {
@@ -487,15 +508,62 @@ export default function ScanScreen() {
     }
   }, [isOnline, processScanItem, showOverlay]);
 
+  const scheduleQueueProcessing = React.useCallback(
+    (forceImmediate = false) => {
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+
+      if (!isOnline || processingQueueRef.current || queueRef.current.length === 0) {
+        return;
+      }
+
+      const now = Date.now();
+      const hasDueItem =
+        forceImmediate || queueRef.current.some((item) => (item.nextRetryAt ?? now) <= now);
+
+      const run = () => {
+        processQueue().catch((error) => {
+          if (__DEV__) {
+            console.warn('Queue processing failed', error);
+          }
+        });
+      };
+
+      if (hasDueItem) {
+        retryTimerRef.current = setTimeout(run, 0);
+        return;
+      }
+
+      const nextTimestamp = queueRef.current.reduce<number | null>((acc, item) => {
+        const candidate = item.nextRetryAt ?? now;
+        return acc === null || candidate < acc ? candidate : acc;
+      }, null);
+
+      if (nextTimestamp == null) {
+        retryTimerRef.current = setTimeout(run, 0);
+        return;
+      }
+
+      const delay = Math.max(nextTimestamp - now, 0);
+      retryTimerRef.current = setTimeout(run, delay);
+    },
+    [isOnline, processQueue],
+  );
+
   React.useEffect(() => {
-    if (isOnline && queueRef.current.length > 0) {
-      processQueue().catch((error) => {
-        if (__DEV__) {
-          console.warn('Queue processing failed', error);
-        }
-      });
-    }
-  }, [isOnline, processQueue, queue.length]);
+    scheduleQueueProcessing();
+  }, [scheduleQueueProcessing, queue]);
+
+  React.useEffect(() => {
+    return () => {
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const handleCapture = React.useCallback(async () => {
     if (!cameraRef.current || capturingRef.current || previewProcessing) return;
