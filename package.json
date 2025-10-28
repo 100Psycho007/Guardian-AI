@@ -15,6 +15,10 @@
     "prettier:write": "prettier --write ."
   },
   "dependencies": {
+    "@expo-google-fonts/inter": "^0.2.3",
+    "@expo/vector-icons": "^14.0.0",
+    "@react-navigation/native": "^6.1.9",
+    "@supabase/supabase-js": "^2.45.3",
     "expo": "~50.0.10",
     "expo-constants": "~15.4.6",
     "expo-font": "~11.10.3",
@@ -24,12 +28,10 @@
     "react": "18.2.0",
     "react-native": "0.73.6",
     "react-native-gesture-handler": "~2.14.1",
+    "react-native-paper": "^5.12.5",
     "react-native-reanimated": "~3.6.2",
     "react-native-safe-area-context": "4.8.2",
-    "react-native-paper": "^5.12.5",
-    "@expo/vector-icons": "^14.0.0",
-    "@react-navigation/native": "^6.1.9",
-    "@expo-google-fonts/inter": "^0.2.3"
+    "react-native-url-polyfill": "^2.0.0"
   },
   "devDependencies": {
     "@babel/core": "^7.24.0",
