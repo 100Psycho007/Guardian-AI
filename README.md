@@ -57,6 +57,10 @@ This project uses public Expo environment variables. Only variables prefixed wit
 
 See `.env.example` for the expected format. Create a `.env` file locally to run the app.
 
+## Supabase backend
+
+The Supabase schema, storage, and realtime configuration are documented in [docs/supabase-setup.md](docs/supabase-setup.md). Apply the initial schema by running the SQL from `supabase/migrations/20241028113000_initial_schema.sql` in the Supabase SQL Editor, or push it through the Supabase CLI after linking your project.
+
 ## Tooling
 
 - Lint: `npm run lint`
