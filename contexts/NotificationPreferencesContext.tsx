@@ -6,11 +6,17 @@ import * as Notifications from 'expo-notifications';
 import { useAuth } from '../hooks/useAuth';
 import {
   clearNotificationPreference,
+  clearNotificationOptOut,
+  hasNotificationPermissionBeenRequested,
+  hasNotificationOptOut,
+  markNotificationOptOut,
+  markNotificationPermissionRequested,
   readNotificationPreference,
   readNotificationToken,
   saveNotificationPreference,
   saveNotificationToken,
 } from '../lib/storage';
+import { supabase } from '../lib/supabase';
 
 export type NotificationPreferencesContextValue = {
   isLoading: boolean;
@@ -25,6 +31,14 @@ const NotificationPreferencesContext = React.createContext<NotificationPreferenc
   undefined,
 );
 
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+  }),
+});
+
 async function registerForPushNotifications(): Promise<string> {
   const { status: existingStatus } = await Notifications.getPermissionsAsync();
   let finalStatus = existingStatus;
@@ -33,6 +47,8 @@ async function registerForPushNotifications(): Promise<string> {
     const permission = await Notifications.requestPermissionsAsync();
     finalStatus = permission.status;
   }
+
+  await markNotificationPermissionRequested();
 
   if (finalStatus !== 'granted') {
     throw new Error('Push notification permissions were not granted.');
@@ -63,6 +79,9 @@ export function NotificationPreferencesProvider({ children }: { children: React.
   const [deviceToken, setDeviceToken] = React.useState<string | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
   const [updating, setUpdating] = React.useState(false);
+  const [permissionRequested, setPermissionRequested] = React.useState<boolean | null>(null);
+
+  const autoEnableAttemptedRef = React.useRef(false);
 
   const hydrate = React.useCallback(
     async (targetUserId: string | null) => {
@@ -75,18 +94,49 @@ export function NotificationPreferencesProvider({ children }: { children: React.
 
       setIsLoading(true);
       try {
-        const [enabled, token] = await Promise.all([
-          readNotificationPreference(targetUserId),
-          readNotificationToken(targetUserId),
-        ]);
-        setPushEnabledState(Boolean(enabled && token));
-        setDeviceToken(enabled && token ? token : null);
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('device_token')
+          .eq('id', targetUserId)
+          .maybeSingle();
+
+        if (profileError) {
+          throw profileError;
+        }
+
+        const token = (profile?.device_token ?? null) as string | null;
+
+        if (token) {
+          setPushEnabledState(true);
+          setDeviceToken(token);
+          await Promise.all([
+            saveNotificationPreference(targetUserId, true),
+            saveNotificationToken(targetUserId, token),
+          ]);
+        } else {
+          setPushEnabledState(false);
+          setDeviceToken(null);
+          await clearNotificationPreference(targetUserId);
+        }
       } catch (error) {
         if (__DEV__) {
           console.warn('Failed to load notification preferences', error);
         }
-        setPushEnabledState(false);
-        setDeviceToken(null);
+
+        try {
+          const [enabled, token] = await Promise.all([
+            readNotificationPreference(targetUserId),
+            readNotificationToken(targetUserId),
+          ]);
+          setPushEnabledState(Boolean(enabled && token));
+          setDeviceToken(enabled && token ? token : null);
+        } catch (storageError) {
+          if (__DEV__) {
+            console.warn('Failed to read cached notification preferences', storageError);
+          }
+          setPushEnabledState(false);
+          setDeviceToken(null);
+        }
       } finally {
         setIsLoading(false);
       }
@@ -102,6 +152,16 @@ export function NotificationPreferencesProvider({ children }: { children: React.
     });
   }, [hydrate, userId]);
 
+  React.useEffect(() => {
+    hasNotificationPermissionBeenRequested()
+      .then((value) => {
+        setPermissionRequested(value);
+      })
+      .catch(() => {
+        setPermissionRequested(false);
+      });
+  }, []);
+
   const setPushEnabled = React.useCallback(
     async (enabled: boolean) => {
       if (!userId) {
@@ -115,7 +175,23 @@ export function NotificationPreferencesProvider({ children }: { children: React.
       setUpdating(true);
       try {
         if (enabled) {
-          const token = await registerForPushNotifications();
+          let token: string;
+          try {
+            token = await registerForPushNotifications();
+            setPermissionRequested(true);
+          } catch (error) {
+            setPermissionRequested(true);
+            throw error;
+          }
+
+          const { error: upsertError } = await supabase
+            .from('profiles')
+            .upsert({ id: userId, device_token: token }, { onConflict: 'id' });
+
+          if (upsertError) {
+            throw new Error(upsertError.message);
+          }
+
           await Promise.all([
             saveNotificationPreference(userId, true),
             saveNotificationToken(userId, token),
@@ -123,6 +199,14 @@ export function NotificationPreferencesProvider({ children }: { children: React.
           setPushEnabledState(true);
           setDeviceToken(token);
           return {};
+        }
+
+        const { error: disableError } = await supabase
+          .from('profiles')
+          .upsert({ id: userId, device_token: null }, { onConflict: 'id' });
+
+        if (disableError) {
+          throw new Error(disableError.message);
         }
 
         await clearNotificationPreference(userId);
@@ -142,8 +226,39 @@ export function NotificationPreferencesProvider({ children }: { children: React.
         setUpdating(false);
       }
     },
-    [updating, userId],
+    [registerForPushNotifications, setPermissionRequested, supabase, updating, userId],
   );
+
+  React.useEffect(() => {
+    if (!userId) {
+      autoEnableAttemptedRef.current = false;
+      return;
+    }
+
+    if (permissionRequested === null || isLoading || updating) {
+      return;
+    }
+
+    if (pushEnabled) {
+      return;
+    }
+
+    if (autoEnableAttemptedRef.current) {
+      return;
+    }
+
+    if (permissionRequested) {
+      autoEnableAttemptedRef.current = true;
+      return;
+    }
+
+    autoEnableAttemptedRef.current = true;
+    setPushEnabled(true).then((result) => {
+      if (result.error && __DEV__) {
+        console.warn('Automatic push enable failed', result.error);
+      }
+    });
+  }, [userId, permissionRequested, pushEnabled, setPushEnabled, isLoading, updating]);
 
   const refresh = React.useCallback(async () => {
     await hydrate(userId);

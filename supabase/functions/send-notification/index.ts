@@ -23,6 +23,7 @@ interface ExpoMessage {
   data?: Record<string, unknown>;
   priority: ExpoPriority;
   sound: 'default';
+  badge?: number;
 }
 
 interface ExpoTicket {
@@ -145,6 +146,7 @@ function toExpoMessages(payload: NormalizedNotificationPayload, priority: ExpoPr
     data: Object.keys(payload.data).length > 0 ? payload.data : undefined,
     priority,
     sound: 'default',
+    badge: typeof payload.badge === 'number' ? payload.badge : undefined,
   }));
 }
 

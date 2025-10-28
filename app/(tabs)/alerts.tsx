@@ -2,6 +2,7 @@ import React from 'react';
 import { ActivityIndicator, Button, Chip, Text, useTheme } from 'react-native-paper';
 import { FlatList, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { ThemedView } from '../../components/Themed';
 import { AlertCard } from '../../components/AlertCard';
@@ -26,6 +27,18 @@ export default function AlertsScreen() {
   const theme = useTheme();
   const { session } = useAuth();
   const userId = session?.user?.id ?? null;
+  const router = useRouter();
+  const localSearchParams = useLocalSearchParams<{ alertId?: string | string[] }>();
+  const alertIdParam = React.useMemo(() => {
+    const raw = localSearchParams.alertId;
+    if (!raw) {
+      return null;
+    }
+    if (Array.isArray(raw)) {
+      return raw[0] ?? null;
+    }
+    return raw;
+  }, [localSearchParams.alertId]);
 
   const { alerts, replaceAlerts, appendAlerts, upsertAlert, markAlertRead } = useAlertStore();
 
@@ -71,6 +84,71 @@ export default function AlertsScreen() {
     setHasMore(true);
     setErrorMessage(null);
   }, [userId]);
+
+  React.useEffect(() => {
+    if (!alertIdParam) {
+      return;
+    }
+
+    const targetId = alertIdParam;
+
+    const clearParam = () => {
+      try {
+        router.setParams({ alertId: undefined });
+      } catch (error) {
+        if (__DEV__) {
+          console.warn('Failed to clear alertId search param', error);
+        }
+      }
+    };
+
+    const existing = alerts.find((alert) => alert.id === targetId);
+    if (existing) {
+      setSelectedAlert(existing);
+      clearParam();
+      return;
+    }
+
+    if (!userId) {
+      clearParam();
+      return;
+    }
+
+    let cancelled = false;
+
+    supabase
+      .from('fraud_alerts')
+      .select('*')
+      .eq('id', targetId)
+      .eq('user_id', userId)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (cancelled) {
+          return;
+        }
+
+        if (error) {
+          if (__DEV__) {
+            console.warn('Failed to fetch alert by id', error);
+          }
+          return;
+        }
+
+        if (data) {
+          upsertAlert(data as FraudAlert);
+          setSelectedAlert({ ...(data as FraudAlert), read: false });
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          clearParam();
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [alertIdParam, alerts, router, upsertAlert, userId]);
 
   React.useEffect(() => {
     let cancelled = false;

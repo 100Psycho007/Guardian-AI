@@ -11,6 +11,7 @@ import { ThemeProvider, useThemeController } from '../contexts/ThemeContext';
 import { AuthProvider } from '../contexts/AuthContext';
 import { AlertStoreProvider } from '../contexts/AlertStoreContext';
 import { NotificationPreferencesProvider } from '../contexts/NotificationPreferencesContext';
+import { useNotificationRouting } from '../hooks/useNotificationRouting';
 
 export default function RootLayout() {
   assertEnv();
@@ -41,6 +42,7 @@ export default function RootLayout() {
 
 function AppContent() {
   const { colorScheme } = useThemeController();
+  useNotificationRouting();
 
   return (
     <>

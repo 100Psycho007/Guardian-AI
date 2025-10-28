@@ -10,8 +10,9 @@ The `analyze-upi` function processes stored UPI screenshot uploads end-to-end. I
 4. Call Claude 3.5 Sonnet (if an API key is configured) to obtain qualitative risk reasoning.
 5. Blend heuristic scoring with the Claude response to compute `risk_score`, `fraud_probability`, `risk_level`, and risk flags.
 6. Store the final metadata on the scan record, update the parent profile’s aggregated `scan_stats`, and upsert a `fraud_alert` when the `risk_score` ≥ 70.
-7. Return a structured JSON payload reporting results, timings, risk metrics, and any upserted alert details.
-8. Log request metadata and apply retry/backoff logic for outbound API calls.
+7. Invoke the `send-notification` edge function to deliver high-priority pushes when a fraud alert reaches high/critical severity and the profile has a registered `device_token`.
+8. Return a structured JSON payload reporting results, timings, risk metrics, and any upserted alert details.
+9. Log request metadata and apply retry/backoff logic for outbound API calls.
 
 ## Runtime configuration
 
@@ -107,6 +108,7 @@ Error responses include `request_id`, a descriptive `message`, and a `500` or `4
 - Scan metadata persisted to `scans.metadata` follows the `ScanMetadata` interface (`risk`, `upi_details`, `claude_analysis`, timings, and optional request metadata).
 - `profiles.scan_stats` aggregates total/high-risk scan counts and the most recent scan summary.
 - A `fraud_alerts` row is inserted or updated when `risk_score ≥ 70`, with severity mapped from the score (≥90 critical, ≥80 high, ≥70 medium).
+- If a profile has a `device_token` on file and the alert severity is `high` or `critical`, the function calls `send-notification` to dispatch a high-priority Expo push (alert + badge).
 
 ## Testing helpers
 

@@ -8,7 +8,8 @@ Follow the steps below to provision the Supabase project for this application.
 2. Go to **SQL Editor → New query**.
 3. Copy the contents of [`supabase/migrations/20241028113000_initial_schema.sql`](../supabase/migrations/20241028113000_initial_schema.sql) into the editor.
 4. Review the statements, then click **Run**. The script creates the `profiles`, `scans`, and `fraud_alerts` tables, prime indexes, triggers, and row level security (RLS) policies.
-5. Confirm the migration completes without errors. If Supabase prompts to save the query, store it as `initial_schema` for traceability.
+5. Repeat for [`supabase/migrations/20241028153000_add_device_token_to_profiles.sql`](../supabase/migrations/20241028153000_add_device_token_to_profiles.sql) to add the `profiles.device_token` column used for Expo push registration.
+6. Confirm each migration completes without errors. If Supabase prompts to save the query, store them for traceability.
 
 > Tip: You can also execute the file locally with the Supabase CLI or any Postgres client for syntax validation before pasting it into the SQL Editor.
 

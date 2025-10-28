@@ -8,6 +8,8 @@ export const LAST_EMAIL_KEY = 'auth:last_email';
 export const THEME_PREFERENCE_KEY = 'settings:theme_preference';
 export const PUSH_NOTIFICATIONS_ENABLED_KEY = 'settings:push_enabled';
 export const PUSH_NOTIFICATIONS_TOKEN_KEY = 'settings:push_token';
+export const PUSH_NOTIFICATIONS_PERMISSION_REQUESTED_KEY = 'settings:push_permission_requested';
+export const PUSH_NOTIFICATIONS_OPT_OUT_KEY = 'settings:push_opt_out';
 
 export type ThemePreferenceValue = 'system' | 'light' | 'dark';
 
@@ -104,6 +106,31 @@ export async function readNotificationPreference(userId: string) {
   const key = getUserScopedKey(PUSH_NOTIFICATIONS_ENABLED_KEY, userId);
   const value = await AsyncStorage.getItem(key);
   return value === 'true';
+}
+
+export async function hasNotificationPermissionBeenRequested() {
+  const value = await AsyncStorage.getItem(PUSH_NOTIFICATIONS_PERMISSION_REQUESTED_KEY);
+  return value === 'true';
+}
+
+export async function markNotificationPermissionRequested() {
+  await AsyncStorage.setItem(PUSH_NOTIFICATIONS_PERMISSION_REQUESTED_KEY, 'true');
+}
+
+export async function hasNotificationOptOut(userId: string) {
+  const key = getUserScopedKey(PUSH_NOTIFICATIONS_OPT_OUT_KEY, userId);
+  const value = await AsyncStorage.getItem(key);
+  return value === 'true';
+}
+
+export async function markNotificationOptOut(userId: string) {
+  const key = getUserScopedKey(PUSH_NOTIFICATIONS_OPT_OUT_KEY, userId);
+  await AsyncStorage.setItem(key, 'true');
+}
+
+export async function clearNotificationOptOut(userId: string) {
+  const key = getUserScopedKey(PUSH_NOTIFICATIONS_OPT_OUT_KEY, userId);
+  await AsyncStorage.removeItem(key);
 }
 
 export async function saveNotificationPreference(userId: string, enabled: boolean) {
