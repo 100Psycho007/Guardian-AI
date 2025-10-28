@@ -9,6 +9,7 @@ import { useFonts, Inter_400Regular, Inter_600SemiBold } from '@expo-google-font
 import { getTheme } from '../lib/theme';
 import { useThemePreference } from '../hooks/useThemePreference';
 import { assertEnv } from '../lib/env';
+import { AuthProvider } from '../contexts/AuthContext';
 
 export default function RootLayout() {
   assertEnv();
@@ -26,8 +27,10 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <PaperProvider theme={theme}>
-          <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
-          <Stack screenOptions={{ headerShown: false }} />
+          <AuthProvider>
+            <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
+            <Stack screenOptions={{ headerShown: false }} />
+          </AuthProvider>
         </PaperProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

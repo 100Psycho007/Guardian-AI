@@ -1,8 +1,20 @@
 import React from 'react';
-import { Tabs } from 'expo-router';
+import { Redirect, Tabs } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 
+import { useAuth } from '../../hooks/useAuth';
+
 export default function TabsLayout() {
+  const { session, initializing } = useAuth();
+
+  if (initializing) {
+    return null;
+  }
+
+  if (!session) {
+    return <Redirect href="/(auth)/sign-in" />;
+  }
+
   return (
     <Tabs screenOptions={{ headerShown: true }}>
       <Tabs.Screen
