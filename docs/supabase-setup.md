@@ -42,4 +42,8 @@ The Expo app can now subscribe to `fraud_alerts` updates with the Supabase clien
 - Client-side code uses the public URL (`EXPO_PUBLIC_SUPABASE_URL`) and anon key (`EXPO_PUBLIC_SUPABASE_ANON_KEY`).
 - Service role keys and database passwords stay in secure server environments or Supabase Edge Functions. Do not expose them in the Expo app.
 
+## 6. Analyze UPI edge function
+
+Refer to [`docs/analyze-upi-edge-function.md`](./analyze-upi-edge-function.md) for runtime secrets, local testing instructions, and the request/response schema required to deploy the `analyze-upi` Supabase Edge Function.
+
 With these steps complete, the Supabase backend is aligned with the Expo client and ready for development.

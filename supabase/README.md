@@ -6,9 +6,9 @@ This directory stores project-specific metadata for the Supabase CLI and serverl
 
 - `config.toml` – Local CLI configuration. Update `project_id` with your Supabase project reference before running CLI commands.
 - `migrations/` – SQL files that can be executed through the Supabase SQL Editor or the CLI. Migrations should be committed.
-- `functions/` – Placeholder directory for edge functions. Add new functions here via `supabase functions new <name>`.
+- `functions/` – Edge function source code. The `analyze-upi` implementation performs UPI OCR + fraud analysis and can be served locally with `supabase functions serve analyze-upi`.
 
-A `.gitkeep` file is committed so the empty `functions/` directory remains in version control until the first function is added.
+A `.gitkeep` file remains so additional function subdirectories stay tracked even when empty.
 
 ## Environment variables
 
