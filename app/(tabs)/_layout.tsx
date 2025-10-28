@@ -3,9 +3,11 @@ import { Redirect, Tabs } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 
 import { useAuth } from '../../hooks/useAuth';
+import { useAlertStore } from '../../contexts/AlertStoreContext';
 
 export default function TabsLayout() {
   const { session, initializing } = useAuth();
+  const { unreadCount } = useAlertStore();
 
   if (initializing) {
     return null;
@@ -22,6 +24,14 @@ export default function TabsLayout() {
         options={{
           title: 'Home',
           tabBarIcon: ({ color, size }) => <MaterialIcons name="home" size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="alerts"
+        options={{
+          title: 'Alerts',
+          tabBarIcon: ({ color, size }) => <MaterialIcons name="notifications" size={size} color={color} />,
+          tabBarBadge: unreadCount > 99 ? '99+' : unreadCount || undefined,
         }}
       />
       <Tabs.Screen

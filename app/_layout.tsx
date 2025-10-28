@@ -10,6 +10,7 @@ import { getTheme } from '../lib/theme';
 import { useThemePreference } from '../hooks/useThemePreference';
 import { assertEnv } from '../lib/env';
 import { AuthProvider } from '../contexts/AuthContext';
+import { AlertStoreProvider } from '../contexts/AlertStoreContext';
 
 export default function RootLayout() {
   assertEnv();
@@ -28,8 +29,10 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <PaperProvider theme={theme}>
           <AuthProvider>
-            <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
-            <Stack screenOptions={{ headerShown: false }} />
+            <AlertStoreProvider>
+              <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
+              <Stack screenOptions={{ headerShown: false }} />
+            </AlertStoreProvider>
           </AuthProvider>
         </PaperProvider>
       </SafeAreaProvider>
