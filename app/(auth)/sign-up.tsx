@@ -1,12 +1,13 @@
 import React from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { Controller, useForm } from 'react-hook-form';
-import { Button, HelperText, Snackbar, Switch, Text, TextInput, useTheme } from 'react-native-paper';
+import { Button, HelperText, Switch, Text, TextInput, useTheme } from 'react-native-paper';
 import { Link, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedView } from '../../components/Themed';
 import { useAuth } from '../../hooks/useAuth';
+import { useToast } from '../../hooks/useToast';
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -21,6 +22,7 @@ type SignUpFormValues = {
 export default function SignUpScreen() {
   const router = useRouter();
   const theme = useTheme();
+  const { showToast } = useToast();
   const { signUp, biometricAvailable, isBiometricEnabled } = useAuth();
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
   const [infoMessage, setInfoMessage] = React.useState<string | null>(null);
@@ -46,7 +48,9 @@ export default function SignUpScreen() {
     setInfoMessage(null);
 
     if (values.password !== values.confirmPassword) {
-      setErrorMessage('Passwords do not match.');
+      const message = 'Passwords do not match.';
+      setErrorMessage(message);
+      showToast({ message, type: 'error', source: 'auth.sign_up' });
       return;
     }
 
@@ -61,14 +65,18 @@ export default function SignUpScreen() {
 
     if (result.error) {
       setErrorMessage(result.error);
+      showToast({ message: result.error, type: 'error', source: 'auth.sign_up' });
       return;
     }
 
     if (result.needsVerification) {
-      setInfoMessage('Check your email inbox to confirm your account before signing in.');
+      const message = 'Check your email inbox to confirm your account before signing in.';
+      setInfoMessage(message);
+      showToast({ message, type: 'info', source: 'auth.sign_up' });
       return;
     }
 
+    showToast({ message: 'Account created. Welcome aboard!', type: 'success', source: 'auth.sign_up' });
     router.replace('/(tabs)');
   };
 
@@ -89,6 +97,26 @@ export default function SignUpScreen() {
                 Join to start scanning securely.
               </Text>
             </View>
+
+            {errorMessage ? (
+              <Text
+                variant="bodyMedium"
+                style={[styles.feedbackMessage, { color: theme.colors.error }]}
+                accessibilityRole="alert"
+              >
+                {errorMessage}
+              </Text>
+            ) : null}
+
+            {infoMessage ? (
+              <Text
+                variant="bodyMedium"
+                style={[styles.feedbackMessage, { color: theme.colors.primary }]}
+                accessibilityRole="status"
+              >
+                {infoMessage}
+              </Text>
+            ) : null}
 
             <Controller
               control={control}
@@ -237,19 +265,6 @@ export default function SignUpScreen() {
               </Link>
             </View>
           </ScrollView>
-          <Snackbar
-            visible={Boolean(errorMessage) || Boolean(infoMessage)}
-            onDismiss={() => {
-              setErrorMessage(null);
-              setInfoMessage(null);
-            }}
-            duration={4000}
-            accessibilityLiveRegion="polite"
-            style={errorMessage ? undefined : { backgroundColor: theme.colors.secondaryContainer }}
-            theme={errorMessage ? undefined : { colors: { onSurface: theme.colors.onSecondaryContainer } }}
-          >
-            {errorMessage ?? infoMessage}
-          </Snackbar>
         </KeyboardAvoidingView>
       </SafeAreaView>
     </ThemedView>
@@ -270,6 +285,9 @@ const styles = StyleSheet.create({
     marginTop: 32,
     marginBottom: 8,
     gap: 8,
+  },
+  feedbackMessage: {
+    marginBottom: 12,
   },
   input: {
     backgroundColor: 'transparent',

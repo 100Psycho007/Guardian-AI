@@ -8,6 +8,7 @@ import { useFonts, Inter_400Regular, Inter_600SemiBold } from '@expo-google-font
 
 import { assertEnv } from '../lib/env';
 import { ThemeProvider, useThemeController } from '../contexts/ThemeContext';
+import { ToastProvider } from '../contexts/ToastContext';
 import { AuthProvider } from '../contexts/AuthContext';
 import { AlertStoreProvider } from '../contexts/AlertStoreContext';
 import { NotificationPreferencesProvider } from '../contexts/NotificationPreferencesContext';
@@ -15,6 +16,7 @@ import { useNotificationRouting } from '../hooks/useNotificationRouting';
 import { ReactQueryProvider } from '../contexts/ReactQueryProvider';
 import { ConnectivityProvider } from '../contexts/ConnectivityContext';
 import { OfflineBanner } from '../components/OfflineBanner';
+import { AppErrorBoundary } from '../components/AppErrorBoundary';
 
 export default function RootLayout() {
   assertEnv();
@@ -32,13 +34,17 @@ export default function RootLayout() {
         <ReactQueryProvider>
           <ConnectivityProvider>
             <ThemeProvider>
-              <AuthProvider>
-                <NotificationPreferencesProvider>
-                  <AlertStoreProvider>
-                    <AppContent />
-                  </AlertStoreProvider>
-                </NotificationPreferencesProvider>
-              </AuthProvider>
+              <AppErrorBoundary>
+                <ToastProvider>
+                  <AuthProvider>
+                    <NotificationPreferencesProvider>
+                      <AlertStoreProvider>
+                        <AppContent />
+                      </AlertStoreProvider>
+                    </NotificationPreferencesProvider>
+                  </AuthProvider>
+                </ToastProvider>
+              </AppErrorBoundary>
             </ThemeProvider>
           </ConnectivityProvider>
         </ReactQueryProvider>

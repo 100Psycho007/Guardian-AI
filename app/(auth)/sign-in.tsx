@@ -1,12 +1,13 @@
 import React from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { useForm, Controller } from 'react-hook-form';
-import { Button, HelperText, Snackbar, Switch, Text, TextInput, useTheme } from 'react-native-paper';
+import { Button, HelperText, Switch, Text, TextInput, useTheme } from 'react-native-paper';
 import { Link, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedView } from '../../components/Themed';
 import { useAuth } from '../../hooks/useAuth';
+import { useToast } from '../../hooks/useToast';
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -19,6 +20,7 @@ type SignInFormValues = {
 export default function SignInScreen() {
   const router = useRouter();
   const theme = useTheme();
+  const { showToast } = useToast();
   const {
     signIn,
     signInWithBiometrics,
@@ -55,8 +57,10 @@ export default function SignInScreen() {
     const result = await signIn(values);
     if (result.error) {
       setErrorMessage(result.error);
+      showToast({ message: result.error, type: 'error', source: 'auth.sign_in' });
       return;
     }
+    showToast({ message: 'Signed in successfully.', type: 'success', source: 'auth.sign_in' });
     router.replace('/(tabs)');
   };
 
@@ -67,8 +71,10 @@ export default function SignInScreen() {
       const result = await signInWithBiometrics();
       if (result.error) {
         setErrorMessage(result.error);
+        showToast({ message: result.error, type: 'error', source: 'auth.sign_in_biometrics' });
         return;
       }
+      showToast({ message: 'Signed in with biometrics.', type: 'success', source: 'auth.sign_in_biometrics' });
       router.replace('/(tabs)');
     } finally {
       setBiometricLoading(false);
@@ -96,6 +102,16 @@ export default function SignInScreen() {
                 Sign in to continue to your dashboard.
               </Text>
             </View>
+
+            {errorMessage ? (
+              <Text
+                variant="bodyMedium"
+                style={[styles.formError, { color: theme.colors.error }]}
+                accessibilityRole="alert"
+              >
+                {errorMessage}
+              </Text>
+            ) : null}
 
             <Controller
               control={control}
@@ -214,14 +230,6 @@ export default function SignInScreen() {
               </Link>
             </View>
           </ScrollView>
-          <Snackbar
-            visible={Boolean(errorMessage)}
-            onDismiss={() => setErrorMessage(null)}
-            duration={4000}
-            accessibilityLiveRegion="polite"
-          >
-            {errorMessage}
-          </Snackbar>
         </KeyboardAvoidingView>
       </SafeAreaView>
     </ThemedView>
@@ -242,6 +250,9 @@ const styles = StyleSheet.create({
     marginTop: 32,
     marginBottom: 8,
     gap: 8,
+  },
+  formError: {
+    marginBottom: 8,
   },
   input: {
     backgroundColor: 'transparent',

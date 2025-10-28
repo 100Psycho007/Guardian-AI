@@ -2,16 +2,7 @@ import React from 'react';
 import { Share, ScrollView, StyleSheet, View } from 'react-native';
 import type { StyleProp, ViewStyle } from 'react-native';
 import { useFocusEffect, useLocalSearchParams } from 'expo-router';
-import {
-  Button,
-  Chip,
-  Divider,
-  List,
-  Snackbar,
-  Surface,
-  Text,
-  useTheme,
-} from 'react-native-paper';
+import { Button, Chip, Divider, List, Surface, Text, useTheme } from 'react-native-paper';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -31,6 +22,7 @@ import {
 } from '../../../../lib/scanQueue';
 import { reportScanToSupabase } from '../../../../lib/reporting';
 import { useAuth } from '../../../../hooks/useAuth';
+import { useToast } from '../../../../hooks/useToast';
 
 function getNumber(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -257,6 +249,7 @@ function SkeletonBlock({ width = '100%', height, borderRadius = 12, color, style
 export default function ScanResultScreen() {
   const theme = useTheme();
   const { session } = useAuth();
+  const { showToast } = useToast();
   const currentUserId = session?.user?.id ?? null;
   const params = useLocalSearchParams<{ id?: string }>();
   const rawId = Array.isArray(params.id) ? params.id[0] : params.id;
@@ -266,14 +259,6 @@ export default function ScanResultScreen() {
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
   const [saving, setSaving] = React.useState(false);
   const [reporting, setReporting] = React.useState(false);
-  const [snackbar, setSnackbar] = React.useState<{ visible: boolean; message: string }>({
-    visible: false,
-    message: '',
-  });
-
-  const showSnackbar = React.useCallback((message: string) => {
-    setSnackbar({ visible: true, message });
-  }, []);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -370,14 +355,14 @@ export default function ScanResultScreen() {
     setSaving(true);
     try {
       await addStoredResult(result);
-      showSnackbar('Scan result saved to your history.');
+      showToast({ message: 'Scan result saved to your history.', type: 'success', source: 'scan.result.save' });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to save result locally.';
-      showSnackbar(message);
+      showToast({ message, type: 'error', source: 'scan.result.save' });
     } finally {
       setSaving(false);
     }
-  }, [result, showSnackbar]);
+  }, [result, showToast]);
 
   const handleShare = React.useCallback(async () => {
     if (!result) return;
@@ -409,14 +394,14 @@ export default function ScanResultScreen() {
       await Share.share({ message: lines.join('\n') });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to open the share sheet.';
-      showSnackbar(message);
+      showToast({ message, type: 'error', source: 'scan.result.share' });
     }
-  }, [flags, fraudProbabilityPercent, result, riskLevel, riskScore, showSnackbar, summary, upiDetails]);
+  }, [flags, fraudProbabilityPercent, result, riskLevel, riskScore, showToast, summary, upiDetails]);
 
   const handleReport = React.useCallback(async () => {
     if (!result) return;
     if (!currentUserId) {
-      showSnackbar('You must be signed in to report this scan.');
+      showToast({ message: 'You must be signed in to report this scan.', type: 'error', source: 'scan.result.report' });
       return;
     }
 
@@ -430,14 +415,18 @@ export default function ScanResultScreen() {
         fraudProbability: fraudProbabilityRaw,
         flags,
       });
-      showSnackbar('Report submitted. Our fraud team has been notified.');
+      showToast({
+        message: 'Report submitted. Our fraud team has been notified.',
+        type: 'success',
+        source: 'scan.result.report',
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to submit report.';
-      showSnackbar(message);
+      showToast({ message, type: 'error', source: 'scan.result.report' });
     } finally {
       setReporting(false);
     }
-  }, [currentUserId, flags, fraudProbabilityRaw, result, riskLevel, riskScore, showSnackbar]);
+  }, [currentUserId, flags, fraudProbabilityRaw, result, riskLevel, riskScore, showToast]);
 
   if (loading) {
     return (
