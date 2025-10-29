@@ -7,6 +7,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts, Inter_400Regular, Inter_600SemiBold } from '@expo-google-fonts/inter';
+import Constants from 'expo-constants';
 
 import { assertEnv } from '../lib/env';
 import { trackEvent } from '../lib/analytics';
@@ -67,9 +68,7 @@ function AppContent() {
 
   const handleScreenCapture = React.useCallback(() => {
     const now = Date.now();
-    if (now - lastCaptureRef.current < 5000) {
-      return;
-    }
+    if (now - lastCaptureRef.current < 5000) return;
 
     lastCaptureRef.current = now;
 
@@ -84,7 +83,18 @@ function AppContent() {
     });
   }, [showToast]);
 
-  useScreenCaptureListener(handleScreenCapture);
+  // ✅ Use Expo Constants instead of global.ExpoGo for compatibility
+  React.useEffect(() => {
+    if (Constants.appOwnership !== 'expo') {
+      try {
+        useScreenCaptureListener(handleScreenCapture);
+      } catch (e) {
+        console.log('Screen capture listener not supported in Expo Go');
+      }
+    } else {
+      console.log('Running in Expo Go - Screen capture listener disabled');
+    }
+  }, [handleScreenCapture]);
 
   return (
     <>
