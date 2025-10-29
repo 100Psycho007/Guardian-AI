@@ -118,7 +118,7 @@ export const useAlertStore = create<AlertStore>((set) => ({
       } else {
         const existing = state.alerts[index];
         if (existing.updated_at === alert.updated_at) {
-          return undefined;
+          return state;
         }
 
         nextAlerts = [...state.alerts];
@@ -151,7 +151,7 @@ export const useAlertStore = create<AlertStore>((set) => ({
             latestRealtimeAlert,
           };
         }
-        return undefined;
+        return state;
       }
 
       const nextReadIds = {
@@ -193,7 +193,10 @@ export const useAlertStore = create<AlertStore>((set) => ({
         const latestRealtimeAlert = state.latestRealtimeAlert && alertIds.includes(state.latestRealtimeAlert.id)
           ? { ...state.latestRealtimeAlert, read: true }
           : state.latestRealtimeAlert;
-        return latestRealtimeAlert === state.latestRealtimeAlert ? undefined : { latestRealtimeAlert };
+        if (latestRealtimeAlert === state.latestRealtimeAlert) {
+          return state;
+        }
+        return { latestRealtimeAlert };
       }
 
       const alerts = state.alerts.map((alert) =>
@@ -216,11 +219,11 @@ export const useAlertStore = create<AlertStore>((set) => ({
   acknowledgeRealtimeAlert: (alertId) => {
     set((state) => {
       if (!state.latestRealtimeAlert) {
-        return undefined;
+        return state;
       }
 
       if (alertId && state.latestRealtimeAlert.id !== alertId) {
-        return undefined;
+        return state;
       }
 
       return {
