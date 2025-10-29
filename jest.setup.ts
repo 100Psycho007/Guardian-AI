@@ -7,16 +7,16 @@ jest.mock('@react-native-async-storage/async-storage', () =>
 );
 
 jest.mock('expo-local-authentication', () => ({
-  hasHardwareAsync: jest.fn().mockResolvedValue(true),
-  isEnrolledAsync: jest.fn().mockResolvedValue(true),
-  supportedAuthenticationTypesAsync: jest.fn().mockResolvedValue([1]),
-  authenticateAsync: jest.fn().mockResolvedValue({ success: true }),
+  hasHardwareAsync: jest.fn(async () => true),
+  isEnrolledAsync: jest.fn(async () => true),
+  supportedAuthenticationTypesAsync: jest.fn(async () => [1]),
+  authenticateAsync: jest.fn(async () => ({ success: true })),
 }));
 
 jest.mock('expo-secure-store', () => ({
-  getItemAsync: jest.fn().mockResolvedValue(null),
-  setItemAsync: jest.fn().mockResolvedValue(undefined),
-  deleteItemAsync: jest.fn().mockResolvedValue(undefined),
+  getItemAsync: jest.fn(async () => null),
+  setItemAsync: jest.fn(async () => undefined),
+  deleteItemAsync: jest.fn(async () => undefined),
 }));
 
 jest.mock('react-native-reanimated', () => {
@@ -35,7 +35,7 @@ const mockRouter = {
 };
 
 jest.mock('expo-router', () => {
-  const actual = jest.requireActual('expo-router');
+  const actual = jest.requireActual<typeof import('expo-router')>('expo-router');
   return {
     ...actual,
     Link: ({ children }: { children: React.ReactNode }) => children,

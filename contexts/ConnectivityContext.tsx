@@ -15,7 +15,7 @@ const defaultState: ConnectivityContextValue = {
   isOnline: true,
   isConnected: true,
   isInternetReachable: true,
-  type: 'unknown',
+  type: 'unknown' as NetInfoStateType,
   details: null,
   lastChangedAt: Date.now(),
 };

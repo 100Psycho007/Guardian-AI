@@ -60,7 +60,6 @@ export function AlertDetailsModal({ alert, visible, onDismiss, onMarkRead }: Ale
       >
         <ScrollView
           contentContainerStyle={styles.content}
-          accessibilityRole="dialog"
           accessibilityLabel={`Alert details for ${alert.reason}`}
         >
           <View style={styles.header}>

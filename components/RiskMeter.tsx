@@ -137,7 +137,6 @@ export function RiskMeter({ score, riskLevel, size = DEFAULT_SIZE }: RiskMeterPr
             strokeDasharray={`${circumference} ${circumference}`}
             animatedProps={animatedProps}
             fill="none"
-            style={styles.progress}
           />
         </Svg>
         <View style={styles.labelContainer} pointerEvents="none">
@@ -164,9 +163,6 @@ const styles = StyleSheet.create({
   },
   svg: {
     transform: [{ rotate: '-90deg' }],
-  },
-  progress: {
-    transform: [{ rotate: '0deg' }],
   },
   labelContainer: {
     position: 'absolute',
