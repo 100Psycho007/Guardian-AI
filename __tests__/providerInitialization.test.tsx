@@ -33,13 +33,13 @@ function createAuthValue(userId: string | null): AuthContextValue {
         } as AuthContextValue['session'])
       : null,
     initializing: false,
-    signIn: jest.fn().mockResolvedValue({}),
-    signUp: jest.fn().mockResolvedValue({ needsVerification: false }),
-    signOut: jest.fn().mockResolvedValue(undefined),
+    signIn: jest.fn(async () => ({})),
+    signUp: jest.fn(async () => ({ needsVerification: false })),
+    signOut: jest.fn(async () => undefined),
     biometricAvailable: false,
     isBiometricEnabled: false,
-    signInWithBiometrics: jest.fn().mockResolvedValue({}),
-    setBiometricPreference: jest.fn().mockResolvedValue({}),
+    signInWithBiometrics: jest.fn(async () => ({})),
+    setBiometricPreference: jest.fn(async () => ({})),
     lastSignInEmail: null,
   };
 }

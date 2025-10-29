@@ -1,8 +1,8 @@
 import React from 'react';
 import { Share, ScrollView, StyleSheet, View } from 'react-native';
-import type { StyleProp, ViewStyle } from 'react-native';
+import type { DimensionValue, StyleProp, ViewStyle } from 'react-native';
 import { useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { Button, Chip, Divider, List, Surface, Text, useTheme } from 'react-native-paper';
+import { Button, Chip, Divider, List, Snackbar, Surface, Text, useTheme } from 'react-native-paper';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -218,14 +218,14 @@ function riskColor(level: string, fallback: string) {
 }
 
 type SkeletonBlockProps = {
-  width?: number | string;
+  width?: DimensionValue;
   height: number;
   borderRadius?: number;
   color: string;
   style?: StyleProp<ViewStyle>;
 };
 
-function SkeletonBlock({ width = '100%', height, borderRadius = 12, color, style }: SkeletonBlockProps) {
+function SkeletonBlock({ width = '100%' as DimensionValue, height, borderRadius = 12, color, style }: SkeletonBlockProps) {
   const opacity = useSharedValue(0.45);
 
   React.useEffect(() => {
@@ -243,7 +243,14 @@ function SkeletonBlock({ width = '100%', height, borderRadius = 12, color, style
     opacity: opacity.value,
   }));
 
-  return <Animated.View style={[styles.skeleton, { width, height, borderRadius, backgroundColor: color }, animatedStyle, style]} />;
+  const blockStyle: ViewStyle = {
+    width,
+    height,
+    borderRadius,
+    backgroundColor: color,
+  };
+
+  return <Animated.View style={[styles.skeleton, blockStyle, animatedStyle, style]} />;
 }
 
 export default function ScanResultScreen() {
@@ -593,14 +600,6 @@ export default function ScanResultScreen() {
           </Button>
         </View>
       </ScrollView>
-
-      <Snackbar
-        visible={snackbar.visible}
-        onDismiss={() => setSnackbar({ visible: false, message: '' })}
-        duration={4000}
-      >
-        {snackbar.message}
-      </Snackbar>
     </ThemedView>
   );
 }

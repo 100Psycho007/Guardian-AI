@@ -196,7 +196,7 @@ export default function AlertsScreen() {
 
     const clearParam = () => {
       try {
-        router.setParams({ alertId: undefined });
+        router.replace('/(tabs)/alerts');
       } catch (error) {
         if (__DEV__) {
           console.warn('Failed to clear alertId search param', error);

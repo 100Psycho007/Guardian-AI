@@ -112,7 +112,7 @@ export default function SignUpScreen() {
               <Text
                 variant="bodyMedium"
                 style={[styles.feedbackMessage, { color: theme.colors.primary }]}
-                accessibilityRole="status"
+                accessibilityRole="text"
               >
                 {infoMessage}
               </Text>

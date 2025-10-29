@@ -17,12 +17,21 @@ function formatTimestamp(value: number) {
 
 function getRiskLevel(response: Record<string, unknown> | undefined) {
   if (!response) return 'unknown';
-  return (
-    (response.risk_level as string) ||
-    (response.riskLevel as string) ||
-    (response.risk as Record<string, unknown>)?.level ||
-    'unknown'
-  );
+
+  const direct = response.risk_level ?? response.riskLevel;
+  if (typeof direct === 'string' && direct) {
+    return direct;
+  }
+
+  const nestedRisk = response.risk;
+  if (nestedRisk && typeof nestedRisk === 'object') {
+    const level = (nestedRisk as Record<string, unknown>).level;
+    if (typeof level === 'string' && level) {
+      return level;
+    }
+  }
+
+  return 'unknown';
 }
 
 function getStatus(response: Record<string, unknown> | undefined) {

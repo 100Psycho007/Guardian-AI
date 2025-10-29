@@ -14,7 +14,7 @@ import type { AuthContextValue } from '../contexts/AuthContext';
 
 jest.mock('../hooks/useAuth');
 jest.mock('../lib/storage', () => ({
-  setOnboardingComplete: jest.fn().mockResolvedValue(undefined),
+  setOnboardingComplete: jest.fn(async () => undefined),
 }));
 
 const mockUseAuth = useAuth as jest.MockedFunction<typeof useAuth>;
@@ -37,13 +37,13 @@ function createAuthValue(overrides: Partial<AuthContextValue> = {}): AuthContext
   return {
     session: null,
     initializing: false,
-    signIn: jest.fn().mockResolvedValue({}),
-    signUp: jest.fn().mockResolvedValue({ needsVerification: false }),
-    signOut: jest.fn().mockResolvedValue(undefined),
+    signIn: jest.fn(async () => ({})),
+    signUp: jest.fn(async () => ({ needsVerification: false })),
+    signOut: jest.fn(async () => undefined),
     biometricAvailable: false,
     isBiometricEnabled: false,
-    signInWithBiometrics: jest.fn().mockResolvedValue({}),
-    setBiometricPreference: jest.fn().mockResolvedValue({}),
+    signInWithBiometrics: jest.fn(async () => ({})),
+    setBiometricPreference: jest.fn(async () => ({})),
     lastSignInEmail: '',
     ...overrides,
   };
@@ -58,7 +58,7 @@ describe('Authentication flows', () => {
   });
 
   it('validates email input before signing in', async () => {
-    const signIn = jest.fn().mockResolvedValue({});
+    const signIn = jest.fn(async () => ({}));
 
     mockUseAuth.mockReturnValue(createAuthValue({ signIn }));
 
@@ -72,7 +72,7 @@ describe('Authentication flows', () => {
   });
 
   it('submits valid credentials and enables biometric login', async () => {
-    const signIn = jest.fn().mockResolvedValue({});
+    const signIn = jest.fn(async () => ({}));
 
     mockUseAuth.mockReturnValue(
       createAuthValue({
@@ -101,7 +101,7 @@ describe('Authentication flows', () => {
   });
 
   it('uses biometric login when available', async () => {
-    const signInWithBiometrics = jest.fn().mockResolvedValue({});
+    const signInWithBiometrics = jest.fn(async () => ({}));
 
     mockUseAuth.mockReturnValue(
       createAuthValue({
@@ -123,7 +123,7 @@ describe('Authentication flows', () => {
   });
 
   it('prevents account creation when passwords do not match', async () => {
-    const signUp = jest.fn().mockResolvedValue({ needsVerification: false });
+    const signUp = jest.fn(async () => ({ needsVerification: false }));
 
     mockUseAuth.mockReturnValue(
       createAuthValue({
@@ -145,7 +145,7 @@ describe('Authentication flows', () => {
   });
 
   it('creates an account and navigates on success', async () => {
-    const signUp = jest.fn().mockResolvedValue({ needsVerification: false });
+    const signUp = jest.fn(async () => ({ needsVerification: false }));
 
     mockUseAuth.mockReturnValue(createAuthValue({ signUp }));
 

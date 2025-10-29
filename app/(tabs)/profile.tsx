@@ -210,7 +210,7 @@ export default function ProfileScreen() {
   const [signOutLoading, setSignOutLoading] = React.useState(false);
   const [pendingToggle, setPendingToggle] = React.useState<ToggleKey>(null);
 
-  const stats = React.useMemo(() => parseScanStats(profile?.scan_stats), [profile?.scan_stats]);
+  const stats = React.useMemo(() => parseScanStats(profile?.scan_stats ?? null), [profile?.scan_stats]);
   const isDarkPreferred = themePreference === 'dark';
 
   const loadData = React.useCallback(
@@ -242,8 +242,10 @@ export default function ProfileScreen() {
           throw scansResult.error;
         }
 
-        setProfile(profileResult.data ?? null);
-        setScans(scansResult.data ?? []);
+        const profileData = (profileResult.data ?? null) as SupabaseProfile | null;
+        const scanData = (scansResult.data ?? []) as ScanListItem[];
+        setProfile(profileData);
+        setScans(scanData);
         setErrorMessage(null);
       } catch (error) {
         const message =
