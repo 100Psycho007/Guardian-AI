@@ -75,7 +75,7 @@ export const useScanStore = create<ScanStore>((set) => ({
   addScan: (scan) => {
     set((state) => {
       if (state.scans.some((item) => item.id === scan.id)) {
-        return undefined;
+        return state;
       }
       const next = sortScans([scan, ...state.scans]);
       return {
@@ -94,7 +94,7 @@ export const useScanStore = create<ScanStore>((set) => ({
       }
       const existing = state.scans[index];
       if (existing.updated_at === scan.updated_at) {
-        return undefined;
+        return state;
       }
       const next = [...state.scans];
       next[index] = scan;
@@ -106,7 +106,7 @@ export const useScanStore = create<ScanStore>((set) => ({
   removeScan: (scanId) => {
     set((state) => {
       if (!state.scans.some((item) => item.id === scanId)) {
-        return undefined;
+        return state;
       }
       const next = state.scans.filter((scan) => scan.id !== scanId);
       return {

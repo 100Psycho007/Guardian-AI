@@ -48,7 +48,7 @@ export function StatsCard({ title, value, subtitle, iconName, accentColor, onPre
   );
 
   return (
-    <Surface style={styles.card} elevation={2} testID={testID} accessibilityRole={onPress ? 'button' : 'summary'}>
+    <Surface style={styles.card} elevation={2} testID={testID} accessibilityRole={onPress ? 'button' : 'none'}>
       {onPress ? (
         <TouchableRipple onPress={onPress} style={styles.touchable} borderless>
           {content}
