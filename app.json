@@ -4,6 +4,7 @@
     "slug": "expo-router-starter",
     "version": "1.0.0",
     "scheme": "exporouterstarter",
+    "entryPoint": "./index.js",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "assetBundlePatterns": [
