@@ -12,7 +12,11 @@
     "ios": {
       "supportsTablet": true
     },
-    "android": {},
+    "android": {
+      "permissions": [
+        "android.permission.DETECT_SCREEN_CAPTURE"
+      ]
+    },
     "web": {
       "bundler": "metro"
     },
