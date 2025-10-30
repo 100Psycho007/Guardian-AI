@@ -1,3 +1,66 @@
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+
+serve(async (req) => {
+  try {
+    // Simple internal auth: require service-role Authorization header
+    const authHeader = req.headers.get('Authorization') || ''
+    if (!SUPABASE_SERVICE_ROLE_KEY || authHeader !== `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { 'Content-Type': 'application/json' } })
+    }
+    const { deviceToken, title, body, data } = await req.json()
+
+    if (!deviceToken) {
+      return new Response(JSON.stringify({ error: 'Device token required' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      })
+    }
+
+    const message = {
+      to: deviceToken,
+      sound: 'default',
+      title: title,
+      body: body,
+      data: data || {},
+      priority: 'high',
+      channelId: 'default'
+    }
+
+    const response = await fetch('https://exp.host/--/api/v2/push/send', {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Accept-Encoding': 'gzip, deflate',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(message)
+    })
+
+    const result = await response.json()
+
+    if (result.data?.status === 'error') {
+      throw new Error(result.data.message)
+    }
+
+    return new Response(JSON.stringify({ success: true, result }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    })
+
+  } catch (error) {
+    console.error('Notification error:', error)
+    const err = error as Error
+    return new Response(JSON.stringify({
+      error: err.message || 'Failed to send notification'
+    }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    })
+  }
+})
+
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 
 import {

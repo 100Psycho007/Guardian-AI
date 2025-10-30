@@ -1,10 +1,9 @@
 # Update project_id with your Supabase project reference (e.g. "abcd1234").
-project_id = "your-project-ref"
+project_id = "xvietalzobghdwhzmbto"
 
 # Optionally point the CLI to a dotenv file that contains secrets.
-[cli]
-dotenv_path = "../.env"
+# dotenv_path = "../.env"
 
 [functions]
 # Add patterns here if certain files should be ignored when deploying functions.
-ignore = []
+[functions.ignore]

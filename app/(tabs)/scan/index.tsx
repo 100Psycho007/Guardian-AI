@@ -1,6 +1,7 @@
 import React from 'react';
 import { Image, Linking, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Camera, CameraType, FlashMode } from 'expo-camera';
+import Constants from 'expo-constants';
 import { PermissionStatus } from 'expo-modules-core';
 import * as Haptics from 'expo-haptics';
 import * as ImageManipulator from 'expo-image-manipulator';
@@ -60,6 +61,26 @@ function createUniqueId() {
 
 function initialSteps() {
   return BASE_STEPS.map((step) => ({ ...step }));
+}
+
+async function retryWithBackoff<T>(fn: () => Promise<T>, opts?: { retries?: number; baseMs?: number; jitterRatio?: number }) {
+  const retries = opts?.retries ?? 3;
+  const baseMs = opts?.baseMs ?? 400;
+  const jitterRatio = opts?.jitterRatio ?? 0.2;
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (attempt === retries) break;
+      const expo = Math.pow(2, attempt);
+      const jitter = 1 + (Math.random() * 2 - 1) * jitterRatio; // +/- jitterRatio
+      const delay = Math.floor(baseMs * expo * jitter);
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error('Operation failed after retries');
 }
 
 export default function ScanScreen() {
@@ -127,21 +148,25 @@ export default function ScanScreen() {
     let active = true;
 
     const prepare = async () => {
-      const permission = await Camera.getCameraPermissionsAsync();
-      if (!active) return;
+      if (Constants.appOwnership !== 'expo') {
+        const permission = await Camera.getCameraPermissionsAsync();
+        if (!active) return;
 
-      if (permission.status === 'granted') {
-        setPermissionStatus(permission.status);
-        return;
-      }
+        if (permission.status === 'granted') {
+          setPermissionStatus(permission.status);
+          return;
+        }
 
-      if (permission.status === 'undetermined') {
-        const requested = await Camera.requestCameraPermissionsAsync();
-        if (active) {
-          setPermissionStatus(requested.status);
+        if (permission.status === 'undetermined') {
+          const requested = await Camera.requestCameraPermissionsAsync();
+          if (active) {
+            setPermissionStatus(requested.status);
+          }
+        } else {
+          setPermissionStatus(permission.status);
         }
       } else {
-        setPermissionStatus(permission.status);
+        setPermissionStatus('denied' as PermissionStatus);
       }
     };
 
@@ -204,37 +229,38 @@ export default function ScanScreen() {
   }, []);
 
   const uploadToSupabase = React.useCallback(async (item: PendingScan) => {
-    const source = item.localUri.startsWith('file://') ? item.localUri : `file://${item.localUri}`;
-    const fileResponse = await fetch(source);
-    const blob = await fileResponse.blob();
-    const { error } = await supabase.storage.from(item.bucket).upload(item.storagePath, blob, {
-      contentType: 'image/jpeg',
-      cacheControl: '3600',
-      upsert: true,
-    });
-
-    if (error) {
-      throw new Error(error.message);
-    }
+    await retryWithBackoff(async () => {
+      const source = item.localUri.startsWith('file://') ? item.localUri : `file://${item.localUri}`;
+      const fileResponse = await fetch(source);
+      const blob = await fileResponse.blob();
+      const { error } = await supabase.storage.from(item.bucket).upload(item.storagePath, blob, {
+        contentType: 'image/jpeg',
+        cacheControl: '3600',
+        upsert: true,
+      });
+      if (error) {
+        throw new Error(error.message);
+      }
+      return true;
+    }, { retries: 2, baseMs: 300, jitterRatio: 0.25 });
   }, []);
 
   const analyzeScan = React.useCallback(async (item: PendingScan) => {
-    const { data, error } = await supabase.functions.invoke('analyze-upi', {
-      body: {
-        storage_path: item.storagePath,
-        bucket: item.bucket,
-        metadata: {
-          source: 'mobile',
-          ...item.metadata,
+    const result = await retryWithBackoff(async () => {
+      const { data, error } = await supabase.functions.invoke('analyze-upi', {
+        body: {
+          storage_path: item.storagePath,
+          bucket: item.bucket,
+          metadata: {
+            source: 'mobile',
+            ...item.metadata,
+          },
         },
-      },
-    });
-
-    if (error) {
-      throw new Error(error.message);
-    }
-
-    return data;
+      });
+      if (error) throw new Error(error.message);
+      return data as unknown;
+    }, { retries: 3, baseMs: 500, jitterRatio: 0.3 });
+    return result as unknown as any;
   }, []);
 
   const persistQueueItem = React.useCallback(
@@ -319,14 +345,18 @@ export default function ScanScreen() {
       setOverlayState((prev) => (prev ? { ...prev, message: 'Uploading image…', error: null } : prev));
 
       try {
+        const uploadStart = Date.now();
         await uploadToSupabase(item);
+        const uploadMs = Date.now() - uploadStart;
         updateStepStatus('upload', 'complete');
 
         currentStepRef.current = 'analyze';
         updateStepStatus('analyze', 'active');
-        setOverlayState((prev) => (prev ? { ...prev, message: 'Analyzing scan…' } : prev));
+        setOverlayState((prev) => (prev ? { ...prev, message: `Upload complete (${uploadMs} ms). Analyzing scan…` } : prev));
 
+        const analyzeStart = Date.now();
         const analysis = await analyzeScan(item);
+        const analyzeMs = Date.now() - analyzeStart;
         updateStepStatus('analyze', 'complete');
         const storedResult: StoredScanResult = {
           id: item.id,
@@ -348,6 +378,7 @@ export default function ScanScreen() {
           await FileSystem.deleteAsync(item.localUri, { idempotent: true }).catch(() => undefined);
         }
 
+        setOverlayState((prev) => (prev ? { ...prev, message: `Done (upload ${uploadMs} ms, analysis ${analyzeMs} ms).` } : prev));
         finalizeSuccess(options.context);
 
         if (userId) {
@@ -567,10 +598,12 @@ export default function ScanScreen() {
     currentStepRef.current = 'capture';
 
     try {
-      const photo = await cameraRef.current.takePictureAsync({ quality: 1, skipProcessing: true });
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      setPreviewPhoto({ uri: photo.uri, capturedAt: Date.now() });
-      setPreviewError(null);
+      if (Constants.appOwnership !== 'expo') {
+        const photo = await cameraRef.current.takePictureAsync({ quality: 1, skipProcessing: true });
+        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        setPreviewPhoto({ uri: photo.uri, capturedAt: Date.now() });
+        setPreviewError(null);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to capture scan. Please try again.';
       showToast({ message, type: 'error', source: 'scan.capture' });
@@ -723,10 +756,14 @@ export default function ScanScreen() {
   ]);
 
   const handlePermissionRequest = React.useCallback(async () => {
-    const result = await Camera.requestCameraPermissionsAsync();
-    setPermissionStatus(result.status);
-    if (result.status !== 'granted') {
-      showToast({ message: 'Camera permission is required to scan receipts.', type: 'error', source: 'scan.permission' });
+    if (Constants.appOwnership !== 'expo') {
+      const result = await Camera.requestCameraPermissionsAsync();
+      setPermissionStatus(result.status);
+      if (result.status !== 'granted') {
+        showToast({ message: 'Camera permission is required to scan receipts.', type: 'error', source: 'scan.permission' });
+      }
+    } else {
+      setPermissionStatus('denied' as PermissionStatus);
     }
   }, [showToast]);
 

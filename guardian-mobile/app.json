@@ -1,0 +1,63 @@
+{
+  "expo": {
+    "name": "Guardian AI",
+    "slug": "guardian-ai",
+    "scheme": "guardianai",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "sdkVersion": "54.0.0",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "updates": {
+      "fallbackToCacheTimeout": 0
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.guardian.ai",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Guardian AI needs camera access to scan UPI screenshots for fraud analysis.",
+        "NSFaceIDUsageDescription": "Enable Face ID to quickly unlock the app.",
+        "NSUserTrackingUsageDescription": "We use analytics to improve your experience."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.guardian.ai",
+      "permissions": [
+        "CAMERA",
+        "VIBRATE",
+        "USE_BIOMETRIC",
+        "USE_FINGERPRINT",
+        "RECEIVE_BOOT_COMPLETED"
+      ],
+      "notification": {
+        "channel": "default"
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    },
+    "plugins": [
+      "expo-local-authentication",
+      [
+        "expo-notifications",
+        {
+          "color": "#3b82f6"
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "00000000-0000-0000-0000-000000000000"
+      }
+    }
+  }
+}
+
+

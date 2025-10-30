@@ -1,3 +1,354 @@
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+
+const CLAUDE_API_KEY = Deno.env.get('CLAUDE_API_KEY')!
+const GOOGLE_VISION_KEY = Deno.env.get('GOOGLE_VISION_KEY')!
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+
+interface AnalysisResult {
+  risk_score: number
+  fraud_probability: 'low' | 'medium' | 'high' | 'critical'
+  fraud_flags: string[]
+  reasoning: string
+  scam_category?: 'phishing' | 'impersonation' | 'lottery' | 'kyc' | 'refund' | 'investment' | 'delivery' | 'none'
+  recommended_action?: 'do_not_proceed' | 'verify_merchant' | 'contact_bank' | 'safe_to_proceed'
+  legitimate_alternative?: string | null
+}
+
+serve(async (req) => {
+  try {
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: 'Missing auth token' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' }
+      })
+    }
+
+    const token = authHeader.replace('Bearer ', '')
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+
+    // Verify user
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+    if (authError || !user) {
+      return new Response(JSON.stringify({ error: 'Invalid token' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' }
+      })
+    }
+
+    // Check scan limit
+    const { data: canScan } = await supabase.rpc('check_scan_limit', {
+      p_user_id: user.id
+    })
+
+    if (!canScan) {
+      return new Response(JSON.stringify({
+        error: 'Scan limit reached',
+        message: 'You have reached your free tier limit of 10 scans per month. Upgrade to Premium for unlimited scans.',
+        upgrade_required: true
+      }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json' }
+      })
+    }
+
+    const { imageBase64, imageUrl, storage_path, bucket, metadata } = await req.json()
+
+    // Prepare image payload: base64 > storage object > url
+    let imageContentBase64: string | null = null
+    if (imageBase64) {
+      imageContentBase64 = imageBase64
+    } else if (storage_path && bucket) {
+      // Download from Supabase Storage
+      const { data: file, error: dlError } = await supabase.storage.from(bucket).download(storage_path)
+      if (dlError) {
+        throw new Error(`Storage download failed: ${dlError.message}`)
+      }
+      const arrayBuffer = await file.arrayBuffer()
+      const bytes = new Uint8Array(arrayBuffer)
+      // Convert to base64
+      let binary = ''
+      for (let i = 0; i < bytes.byteLength; i++) {
+        binary += String.fromCharCode(bytes[i])
+      }
+      imageContentBase64 = btoa(binary)
+    }
+
+    // Step 1: OCR with Google Vision API
+    console.log('Starting OCR...')
+    const visionResponse = await fetch(
+      `https://vision.googleapis.com/v1/images:annotate?key=${GOOGLE_VISION_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          requests: [{
+            image: imageContentBase64 ? { content: imageContentBase64 } : { source: { imageUri: imageUrl } },
+            features: [
+              { type: 'TEXT_DETECTION' },
+              { type: 'DOCUMENT_TEXT_DETECTION' }
+            ]
+          }]
+        })
+      }
+    )
+
+    if (!visionResponse.ok) {
+      throw new Error('Google Vision API failed')
+    }
+
+    const visionData = await visionResponse.json()
+    const fullText = visionData.responses[0]?.fullTextAnnotation?.text || ''
+
+    if (!fullText) {
+      return new Response(JSON.stringify({
+        error: 'No text found in image',
+        message: 'Could not extract text from the screenshot. Please ensure the image is clear and contains a UPI payment screen.'
+      }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      })
+    }
+    console.log('OCR complete, extracted text length:', fullText.length)
+
+    // Step 2: Extract UPI details using regex
+    const upiIdMatch = fullText.match(/([a-zA-Z0-9._-]+@[a-zA-Z]+)/i)
+    const upiId = upiIdMatch ? upiIdMatch[1] : null
+
+    const amountMatch = fullText.match(/₹\s*([\d,]+\.?\d*)|Rs\.?\s*([\d,]+\.?\d*)|INR\s*([\d,]+\.?\d*)/i)
+    const amountStr = amountMatch ? (amountMatch[1] || amountMatch[2] || amountMatch[3]).replace(/,/g, '') : null
+    const amount = amountStr ? parseFloat(amountStr) : null
+
+    const merchantMatch = fullText.match(/(?:To|Pay to|Paying|Merchant|Payee)\s*:?\s*([A-Za-z0-9\s]+?)(?:\n|UPI|₹|Rs|INR|@)/i)
+    const merchant = merchantMatch ? merchantMatch[1].trim() : null
+
+    const messageMatch = fullText.match(/(?:Message|Note|Remark|Purpose|Description)\s*:?\s*(.+?)(?:\n|$)/i)
+    const message = messageMatch ? messageMatch[1].trim() : null
+
+    console.log('Extracted data:', { upiId, merchant, amount, message })
+
+    // Step 3: AI Fraud Analysis with Claude
+    console.log('Starting AI analysis...')
+    const claudePrompt = `You are an expert fraud detection AI specializing in UPI payment scams in India.
+
+Analyze this transaction for fraud indicators:
+
+UPI ID: ${upiId || 'Not found'}
+Merchant: ${merchant || 'Not found'}
+Amount: ₹${amount || 'Not found'}
+Message: ${message || 'Not found'}
+Full Text: ${fullText.substring(0, 500)}
+
+FRAUD DETECTION CHECKLIST:
+
+1. TYPOSQUATTING (HIGH PRIORITY)
+- Amazon → Amazom, Amazan, Amaozn
+- Flipkart → Flopkart, Flipkrat
+- Swiggy → Swigy, Swiggy1
+- Zomato → Zomatto, Zomato1
+- Check if merchant name is one character different from known brands
+
+2. URGENCY LANGUAGE (HIGH PRIORITY)
+- "Act now", "Limited time", "Urgent"
+- "Account will be blocked", "KYC expired"
+- "Verify immediately", "Last chance"
+- "Click within 24 hours"
+
+3. SUSPICIOUS AMOUNTS (MEDIUM PRIORITY)
+- Very round numbers: 99,999 / 50,000 / 25,000
+- Amounts ending in 999
+- Unusually high for claimed service
+- ₹1 or ₹10 "verification" amounts
+
+4. KNOWN SCAM PATTERNS (HIGH PRIORITY)
+- Lottery wins ("You won ₹10 lakh")
+- Tax refunds ("GST refund pending")
+- KYC updates ("Update KYC to avoid block")
+- Prize money ("Claim your prize")
+- Fake delivery charges
+- Insurance refunds
+
+5. MERCHANT RED FLAGS (MEDIUM PRIORITY)
+- Generic names: "Merchant", "Shop", "Store", "Seller"
+- Random numbers in name: "Shop123", "Merchant456"
+- All caps: "URGENT KYC"
+- Misspellings and poor grammar
+
+6. UPI ID ANALYSIS (MEDIUM PRIORITY)
+- Too many numbers in name part
+- Random character sequences
+- Suspicious bank codes
+- Personal names for business transactions
+
+7. MESSAGE ANALYSIS (HIGH PRIORITY)
+- Requests to call a number
+- Links to click
+- Asks for OTP or password
+- Claims account issues
+- Unexpected refunds
+
+SCAM CATEGORIES:
+- Phishing (credential theft)
+- Impersonation (fake brands)
+- Lottery/Prize scams
+- KYC/Account verification
+- Refund scams
+- Investment schemes
+- Delivery fee scams
+
+Return ONLY valid JSON (no markdown, no extra text):
+{
+  "risk_score": 0-100 (integer),
+  "fraud_probability": "low" | "medium" | "high" | "critical",
+  "fraud_flags": [
+    "Specific flag 1",
+    "Specific flag 2",
+    "Specific flag 3"
+  ],
+  "reasoning": "Detailed 2-3 sentence explanation of why this is flagged. Be specific about which patterns triggered the alert.",
+  "scam_category": "phishing" | "impersonation" | "lottery" | "kyc" | "refund" | "investment" | "delivery" | "none",
+  "recommended_action": "do_not_proceed" | "verify_merchant" | "contact_bank" | "safe_to_proceed",
+  "legitimate_alternative": "If typosquatting detected, provide correct merchant name, otherwise null"
+}
+
+SCORING GUIDE:
+0-30: Safe (legitimate transaction)
+31-50: Low risk (minor concerns)
+51-70: Medium risk (multiple red flags)
+71-85: High risk (likely fraud)
+86-100: Critical risk (definite fraud attempt)
+
+Be thorough. False positives are better than missing fraud.`
+
+    const claudeResponse = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': CLAUDE_API_KEY,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-3-5-sonnet-20241022',
+        max_tokens: 1500,
+        temperature: 0.3,
+        messages: [{
+          role: 'user',
+          content: claudePrompt
+        }]
+      })
+    })
+
+    if (!claudeResponse.ok) {
+      const error = await claudeResponse.text()
+      console.error('Claude API error:', error)
+      throw new Error('AI analysis failed')
+    }
+
+    const claudeData = await claudeResponse.json()
+    const analysisText = claudeData.content?.[0]?.text ?? ''
+    console.log('Claude response:', analysisText)
+
+    const jsonMatch = analysisText.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) {
+      throw new Error('Failed to parse AI response')
+    }
+    const analysis: AnalysisResult = JSON.parse(jsonMatch[0])
+
+    // Step 4: Save scan to database
+    console.log('Saving scan to database...')
+    const { data: scan, error: scanError } = await supabase
+      .from('scans')
+  .insert({
+        user_id: user.id,
+    image_url: imageUrl || (storage_path ? `${bucket}/${storage_path}` : null),
+        extracted_data: {
+          fullText: fullText.substring(0, 1000),
+          upiId,
+          merchant,
+          amount,
+      message,
+      source: metadata?.source || null
+        },
+        risk_score: analysis.risk_score,
+        fraud_probability: analysis.fraud_probability,
+        ai_reasoning: analysis.reasoning,
+        fraud_flags: analysis.fraud_flags,
+        scam_category: analysis.scam_category || null,
+        recommended_action: analysis.recommended_action || null,
+        upi_id: upiId,
+        merchant: merchant,
+        amount: amount
+      })
+      .select()
+      .single()
+
+    if (scanError) {
+      console.error('Database error:', scanError)
+      throw new Error('Failed to save scan')
+    }
+
+    // Step 5: Create fraud alert if high risk
+    if (analysis.risk_score > 70 && upiId) {
+      console.log('Creating fraud alert...')
+      await supabase
+        .from('fraud_alerts')
+        .upsert({
+          entity_id: upiId,
+          entity_type: 'upi',
+          risk_level: analysis.fraud_probability,
+          description: `${merchant || 'Unknown merchant'} - ${analysis.reasoning.substring(0, 200)}`
+        }, {
+          onConflict: 'entity_id',
+          ignoreDuplicates: false
+        })
+    }
+
+    // Step 6: Send push notification if critical
+    if (analysis.risk_score > 85) {
+      console.log('Sending critical alert notification...')
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('device_token')
+        .eq('id', user.id)
+        .single()
+
+      if (profile?.device_token) {
+        await fetch(`${SUPABASE_URL}/functions/v1/send-notification`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
+          },
+          body: JSON.stringify({
+            deviceToken: profile.device_token,
+            title: '⚠️ Critical Fraud Alert',
+            body: `Risk Score: ${analysis.risk_score}. Do not proceed with this payment!`,
+            data: { scanId: (scan as any).id, riskScore: analysis.risk_score }
+          })
+        }).catch(err => console.error('Notification failed:', err))
+      }
+    }
+
+    console.log('Analysis complete!')
+    return new Response(JSON.stringify(scan), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    })
+  } catch (error) {
+    console.error('Error in analyze-upi:', error)
+    const err = error as Error
+    return new Response(JSON.stringify({
+      error: err.message || 'Internal server error',
+      details: String(error)
+    }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    })
+  }
+})
+
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { encode as encodeBase64 } from 'https://deno.land/std@0.224.0/encoding/base64.ts';
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.45.3';

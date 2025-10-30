@@ -1,5 +1,6 @@
 {
   "expo": {
+       "sdkVersion": "51.0.0",
     "name": "Expo Router Starter",
     "slug": "expo-router-starter",
     "version": "1.0.0",
